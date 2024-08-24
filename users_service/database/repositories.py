@@ -8,6 +8,7 @@ from .engine import DatabaseEngine
 
 Base.metadata.create_all(bind=DatabaseEngine())
 
+
 class BaseRepository(ABC):
 
     def __init__(self):
@@ -41,4 +42,17 @@ class UsersRepository(BaseRepository):
             session.add(user)
             session.commit()
 
+    def update(self, user_id, **kwargs):
+        """
+        Update values in the for a specific user_id
 
+        Args:
+            user_id (int): _description_
+        """
+
+        with self.Session() as session:
+            statement = (
+                update(self.model).where(self.model.id == user_id).values(**kwargs)
+            )
+            session.execute(statement)
+            session.commit()

@@ -10,4 +10,4 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(Text)
-    matrix_user_id = Column(Text)
+    matrix_username = Column(Text)

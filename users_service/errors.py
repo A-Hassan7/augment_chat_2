@@ -1,0 +1,2 @@
+class MatrixUserRegistrationError(Exception):
+    pass
