@@ -35,7 +35,7 @@ class UsersRepository(BaseRepository):
     def get_by_user_id(self, user_id: str):
         with self.Session() as session:
             statement = select(self.model).where(self.model.id == user_id)
-            return session.execute(statement).scalars().all()
+            return session.execute(statement).scalar()
 
     def create(self, user: User):
         with self.Session() as session:
