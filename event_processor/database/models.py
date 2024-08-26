@@ -1,10 +1,38 @@
-from sqlalchemy import Column, Integer, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped
+from sqlalchemy import Column, Integer, Text, DateTime, func
+from sqlalchemy.orm import DeclarativeBase
 
 
 #### EVENT PROCESSOR TABLES
 class Base(DeclarativeBase):
     __table_args__ = {"schema": "event_processor"}
+
+
+# add timestamp columns to model
+class TimestampMixin:
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ParsedMessage(Base, TimestampMixin):
+    __tablename__ = "parsed_messages"
+
+    event_id = Column(Text, primary_key=True)
+    room_id = Column(Text, nullable=False)
+    matrix_server_timestamp = Column(Text, nullable=False)
+    origin_server = Column(Text, nullable=False)
+    message_type = Column(Text, nullable=False)
+    sender = Column(Text, nullable=False)
+    body = Column(Text)
+    resource_url = Column(Text)
+    depth = Column(Integer)
+
+
+class ProcessedEvent(Base, TimestampMixin):
+    __tablename__ = "processed_events"
+
+    event_id = Column(Text, primary_key=True)
 
 
 #### MATRIX LOGICAL REPLICATION TABLE

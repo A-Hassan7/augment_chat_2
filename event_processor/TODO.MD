@@ -1,0 +1,4 @@
+- create logical replication monitor
+  - make sure messages are being received (max received_ts on matrix server vs augment_chat)
+  - measure latency
+- create event processor reconciliation to process unprocessed events
