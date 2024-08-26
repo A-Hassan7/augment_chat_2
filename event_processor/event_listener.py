@@ -1,7 +1,11 @@
+import json
+
+from pydantic import BaseModel
 import psycopg2
 
 from .database.engine import DatabaseEngine
 from .config import EventListenerConfig
+from .event_processor import EventProcessor
 
 
 class EventListener:
@@ -33,7 +37,13 @@ class EventListener:
             connection.poll()
             while notifies := connection.notifies:
                 notification = notifies.pop(0)
-                self.create_event_processor_task(notification)
+                self.queue_event(notification)
 
-    def create_event_processor_task(self, notification):
-        print(notification)
+    def queue_event(self, notification):
+
+        if not notification.payload:
+            raise ValueError("Notification payload is missing")
+
+        # add the task to a queue
+        processor = EventProcessor()
+        processor.process_event(notification.payload)
