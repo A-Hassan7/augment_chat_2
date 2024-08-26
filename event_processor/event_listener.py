@@ -1,6 +1,3 @@
-import json
-
-from pydantic import BaseModel
 import psycopg2
 
 from .database.engine import DatabaseEngine
