@@ -52,6 +52,4 @@ class ImageMessageContent(BaseModel):
 
 class NoticeMessageContent(BaseModel):
     body: str
-    format: str
     msgtype: str
-    formatted_body: str
