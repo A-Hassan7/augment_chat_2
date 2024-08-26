@@ -64,9 +64,10 @@ BEGIN
     -- create a json payload with the event_id and the 
 	payload := json_build_object(
 		'event_id', NEW.event_id,
-		'json', NEW.json::jsonb
+		'event_json', NEW.json::jsonb
 	);
     PERFORM pg_notify('matrix_event_json', payload::text);
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 ```
