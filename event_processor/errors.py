@@ -1,0 +1,2 @@
+class UnsupportedEventTypeError(Exception):
+    pass

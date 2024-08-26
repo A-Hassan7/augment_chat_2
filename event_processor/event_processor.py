@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from .event_models import BaseEvent, RoomMessageEvent
 from .database.models import ParsedMessage, ProcessedEvent
 from .database.repositories import ParsedMessagesRepository, ProcessedEventsRepository
+from .errors import UnsupportedEventTypeError
 
 
 class EventPayload(BaseModel):
@@ -28,13 +29,24 @@ class EventProcessor:
     # logging
 
     def process_event(self, payload):
+        """
+        Process an event
+
+        Args:
+            payload (_type_): _description_
+        """
 
         # validate payload
         payload_json = json.loads(payload)
         payload = EventPayload(**payload_json)
 
         # create internal event object
-        event = self._create_event_object_from_payload(payload)
+        try:
+            event = self._create_event_object_from_payload(payload)
+        except UnsupportedEventTypeError as e:
+            # log
+            print(e)
+            return
 
         if isinstance(event, RoomMessageEvent):
             # insert parsed message event into database
@@ -110,4 +122,4 @@ class EventProcessor:
         if event_type == "m.room.message":
             return RoomMessageEvent(**event_json)
         else:
-            raise ValueError(f"Unsupported event type {event_type}")
+            raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")

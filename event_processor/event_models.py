@@ -34,7 +34,6 @@ class RoomMessageEvent(BaseEvent):
 class TextMessageContent(BaseModel):
     body: str
     msgtype: str
-    m_mentions: dict = Field(alias="m.mentions")
 
 
 class AudioMessageContent(BaseModel):
@@ -42,7 +41,6 @@ class AudioMessageContent(BaseModel):
     body: str
     info: dict
     msgtype: str
-    m_mentions: dict = Field(alias="m.mentions")
 
 
 class ImageMessageContent(BaseModel):
@@ -50,7 +48,6 @@ class ImageMessageContent(BaseModel):
     body: str
     info: dict
     msgtype: str
-    m_mentions: dict = Field(alias="m.mentions")
 
 
 class NoticeMessageContent(BaseModel):
