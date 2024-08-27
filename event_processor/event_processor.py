@@ -77,8 +77,8 @@ class EventProcessor:
         parsed_message = ParsedMessage(
             event_id=event.event_id,
             room_id=event.room_id,
-            matrix_server_timestamp=event.origin_server_ts,
-            origin_server=event.origin,
+            message_timestamp=event.origin_server_ts,  # this is the original timestamp the message was sent
+            matrix_server_hostname=event.origin,
             message_type=event.content.msgtype,
             sender=event.sender,
             body=event.content.body,
