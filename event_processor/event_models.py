@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ValidationError
+
+from .errors import NoContentInRoomMessageEvent, UnsupportedMessageContentType
 
 
 class BaseEvent(BaseModel):
@@ -17,17 +19,27 @@ class RoomMessageEvent(BaseEvent):
     @field_validator("content")
     def create_content(content):
 
+        if not content:
+            raise NoContentInRoomMessageEvent(
+                "RoomMessageEvent does not contain any content"
+            )
+
         msgtype = content.get("msgtype")
-        if msgtype == "m.text":
-            return TextMessageContent(**content)
-        if msgtype == "m.audio":
-            return AudioMessageContent(**content)
-        if msgtype == "m.image":
-            return ImageMessageContent(**content)
-        if msgtype == "m.notice":
-            return NoticeMessageContent(**content)
-        else:
-            raise ValueError(f"Unsupported message content type {msgtype}")
+        msgtype_mapper = {
+            "m.text": TextMessageContent,
+            "m.audio": AudioMessageContent,
+            "m.image": ImageMessageContent,
+            "m.notice": NoticeMessageContent,
+            "m.video": VideoMessageContent,
+        }
+
+        content_model = msgtype_mapper.get(msgtype)
+        if not content_model:
+            raise UnsupportedMessageContentType(
+                f"Unsupported message content type {msgtype}"
+            )
+
+        return content_model(**content)
 
 
 # different types of contents
@@ -39,17 +51,21 @@ class TextMessageContent(BaseModel):
 class AudioMessageContent(BaseModel):
     url: str
     body: str
-    info: dict
     msgtype: str
 
 
 class ImageMessageContent(BaseModel):
     url: str
     body: str
-    info: dict
     msgtype: str
 
 
 class NoticeMessageContent(BaseModel):
+    body: str
+    msgtype: str
+
+
+class VideoMessageContent(BaseModel):
+    url: str
     body: str
     msgtype: str

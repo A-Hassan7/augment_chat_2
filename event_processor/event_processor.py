@@ -9,12 +9,16 @@
 
 import json
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .event_models import BaseEvent, RoomMessageEvent
 from .database.models import ParsedMessage, ProcessedEvent
 from .database.repositories import ParsedMessagesRepository, ProcessedEventsRepository
-from .errors import UnsupportedEventTypeError
+from .errors import (
+    UnsupportedEventTypeError,
+    NoContentInRoomMessageEvent,
+    UnsupportedMessageContentType,
+)
 
 
 class EventPayload(BaseModel):
@@ -28,12 +32,12 @@ class EventProcessor:
     # task queue
     # logging
 
-    def process_event(self, payload):
+    def process_event(self, payload: str):
         """
         Process an event
 
         Args:
-            payload (_type_): _description_
+            payload (str): json string containing an object that complies with EventPayload
         """
 
         # validate payload
@@ -120,6 +124,12 @@ class EventProcessor:
 
         event_type = event_json.get("type")
         if event_type == "m.room.message":
-            return RoomMessageEvent(**event_json)
-        else:
-            raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")
+            try:
+                return RoomMessageEvent(**event_json)
+            except NoContentInRoomMessageEvent as e:
+                # log
+                print(e)
+            except UnsupportedMessageContentType as e:
+                # log
+                print(e)
+        raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")

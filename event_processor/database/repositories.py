@@ -48,3 +48,26 @@ class ProcessedEventsRepository(BaseRepository):
         with self.Session() as session:
             session.add(processed_event)
             session.commit()
+
+
+class UnprocessedEventsViewRepository:
+
+    def __init__(self):
+        self.Session = sessionmaker(bind=DatabaseEngine())
+
+    def get_unprocessed_events(self):
+        """
+        Return a list of events that haven't been processed.
+
+        This compares the processed_events table with the matrix event_json table to find events that exist
+        in the matrix event_json table but not the processed_events table.
+        """
+        with self.Session() as session:
+            query = """
+            select events.event_id, events.json::jsonb as event_json
+            from public.event_json events
+            left join event_processor.processed_events processed
+                on events.event_id = processed.event_id
+            where processed.event_id is null
+            """
+            return session.execute(text(query)).all()
