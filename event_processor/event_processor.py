@@ -68,10 +68,7 @@ class EventProcessor:
         """
 
         # text message content types don't have a url
-        if hasattr(event.content, "url"):
-            resource_url = event.content.url
-        else:
-            resource_url = None
+        resource_url = getattr(event.content, "url", None)
 
         # create orm model
         parsed_message = ParsedMessage(
@@ -132,4 +129,6 @@ class EventProcessor:
             except UnsupportedMessageContentType as e:
                 # log
                 print(e)
+
+        # non m.room.message events are currently not needed by the application so I can imply ignore these
         raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")
