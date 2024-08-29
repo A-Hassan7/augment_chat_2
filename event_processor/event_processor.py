@@ -32,13 +32,16 @@ class EventProcessor:
     # task queue
     # logging
 
-    def process_event(self, payload: str):
+    @staticmethod
+    def process_event(payload: str):
         """
         Process an event
 
         Args:
             payload (str): json string containing an object that complies with EventPayload
         """
+
+        self = EventProcessor()
 
         # validate payload
         payload_json = json.loads(payload)

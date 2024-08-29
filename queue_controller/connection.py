@@ -20,4 +20,7 @@ class RedisConnection:
                 password=RedisConfig.PASSWORD,
             )
 
+            # test connection
+            cls._connection.ping()
+
         return cls._connection

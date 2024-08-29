@@ -2,12 +2,12 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv("task_queue/.env.task_queue")
+load_dotenv("queue_controller/.env.queue_controller")
 
 
 class RedisConfig:
 
-    HOST = os.environ.get("HOST")
-    PORT = os.environ.get("PORT")
-    DB = os.environ.get("DB")
-    PASSWORD = os.environ.get("PASSWORD")
+    HOST = os.environ.get("REDIS_HOST")
+    PORT = os.environ.get("REDIS_PORT")
+    DB = os.environ.get("REDIS_DB")
+    PASSWORD = os.environ.get("REDIS_PASSWORD")

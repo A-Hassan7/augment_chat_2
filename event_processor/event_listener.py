@@ -2,7 +2,7 @@ import psycopg2
 
 from .database.engine import DatabaseEngine
 from .config import EventListenerConfig
-from .event_processor import EventProcessor
+from .interface import EventProcessorQueueInterface
 
 
 class EventListener:
@@ -10,6 +10,7 @@ class EventListener:
     def __init__(self):
         self.engine = DatabaseEngine()
         self.config = EventListenerConfig()
+        self.event_processor_queue = EventProcessorQueueInterface()
 
     def run(self):
         """
@@ -33,14 +34,11 @@ class EventListener:
             # if there is a new event it will be added to the notifies list
             connection.poll()
             while notifies := connection.notifies:
+
                 notification = notifies.pop(0)
-                self.queue_event(notification)
 
-    def queue_event(self, notification):
+                if not notification.payload:
+                    raise ValueError("Notifaciton payload is missing")
 
-        if not notification.payload:
-            raise ValueError("Notification payload is missing")
-
-        # add the task to a queue
-        processor = EventProcessor()
-        processor.process_event(notification.payload)
+                print(notification.payload)
+                self.event_processor_queue.enqueue_event(notification.payload)

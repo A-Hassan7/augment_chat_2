@@ -4,11 +4,15 @@ from pydantic import ValidationError
 
 from .database.repositories import UnprocessedEventsViewRepository
 from .event_processor import EventProcessor, EventPayload
+from .interface import EventProcessorQueueInterface
 
 
 class EventBackfiller:
     # get unprocessed events
     # process them/add them to the queue
+
+    def __init__(self):
+        self.event_processor_queue = EventProcessorQueueInterface()
 
     def process_unprocessed_events(self):
         """
@@ -27,8 +31,7 @@ class EventBackfiller:
                 print("Payload could not be constructed")
 
             # TODO: append task to queue instead
-            event_processor = EventProcessor()
-            event_processor.process_event(payload)
+            self.event_processor_queue.enqueue_event(payload)
 
     @property
     def unprocessed_events(self):
