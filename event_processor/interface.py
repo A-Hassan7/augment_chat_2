@@ -1,37 +1,19 @@
-from rq import Worker
+from .event_queue import EventProcessorQueue
+from .event_backfiller import EventBackfiller
+from .event_listener import EventListener
 
-from queue_controller import QueueController
-from .event_processor import EventProcessor
 
-
-class EventProcessorQueueInterface:
+class EventProcessorInterface:
 
     def __init__(self):
-        self.queue_controller = QueueController()
-        self.event_processor_queue = self.queue_controller.get_queue("event_processor")
-        self.event_processor_worker = self.queue_controller.get_worker(
-            "event_processor"
-        )
+        self.event_backfiller = EventBackfiller()
+        self.event_listener = EventListener()
 
-        self.event_processor = EventProcessor()
+    def backfill(self):
+        self.event_backfiller.process_unprocessed_events()
 
-    def enqueue_event(self, payload):
-        """
-        Add an event to the queue to be processed
+    def run_event_listener(self):
+        self.event_listener.run()
 
-        Args:
-            payload (str): json string containing an object that complies with EventPayload
-
-        Returns:
-
-        """
-        # TODO: check the payload before inserting the task???
-        return self.event_processor_queue.enqueue(
-            self.event_processor.process_event, payload
-        )
-
-    def run_worker(self):
-        """
-        Run a worker to process events in the event processor queue
-        """
-        self.event_processor_worker.work()
+    def run_event_processor_worker(self):
+        self.event_processor_queue.run_worker()

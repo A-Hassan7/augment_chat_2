@@ -3,8 +3,8 @@ import json
 from pydantic import ValidationError
 
 from .database.repositories import UnprocessedEventsViewRepository
-from .event_processor import EventProcessor, EventPayload
-from .interface import EventProcessorQueueInterface
+from .event_processor import EventPayload
+from .event_queue import EventProcessorQueue
 
 
 class EventBackfiller:
@@ -12,7 +12,7 @@ class EventBackfiller:
     # process them/add them to the queue
 
     def __init__(self):
-        self.event_processor_queue = EventProcessorQueueInterface()
+        self.event_processor_queue = EventProcessorQueue()
 
     def process_unprocessed_events(self):
         """
@@ -30,7 +30,6 @@ class EventBackfiller:
                 # log
                 print("Payload could not be constructed")
 
-            # TODO: append task to queue instead
             self.event_processor_queue.enqueue_event(payload)
 
     @property

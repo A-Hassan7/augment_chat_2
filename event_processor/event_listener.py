@@ -2,7 +2,7 @@ import psycopg2
 
 from .database.engine import DatabaseEngine
 from .config import EventListenerConfig
-from .interface import EventProcessorQueueInterface
+from .event_queue import EventProcessorQueue
 
 
 class EventListener:
@@ -10,7 +10,7 @@ class EventListener:
     def __init__(self):
         self.engine = DatabaseEngine()
         self.config = EventListenerConfig()
-        self.event_processor_queue = EventProcessorQueueInterface()
+        self.event_processor_queue = EventProcessorQueue()
 
     def run(self):
         """
@@ -41,4 +41,6 @@ class EventListener:
                     raise ValueError("Notifaciton payload is missing")
 
                 print(notification.payload)
+
+                # add event to queue
                 self.event_processor_queue.enqueue_event(notification.payload)
