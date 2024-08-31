@@ -1,4 +1,3 @@
-from .event_queue import EventProcessorQueue
 from .event_backfiller import EventBackfiller
 from .event_listener import EventListener
 
