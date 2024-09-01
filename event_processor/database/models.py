@@ -20,7 +20,7 @@ class ParsedMessage(Base, TimestampMixin):
 
     event_id = Column(Text, primary_key=True)
     room_id = Column(Text, nullable=False)
-    message_timestamp = Column(Text, nullable=False)
+    message_timestamp = Column(DateTime, nullable=False)
     matrix_server_hostname = Column(Text, nullable=False)
     message_type = Column(Text, nullable=False)
     sender = Column(Text, nullable=False)

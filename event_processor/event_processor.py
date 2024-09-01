@@ -8,6 +8,7 @@
 
 
 import json
+from datetime import datetime
 
 from pydantic import BaseModel, ValidationError
 
@@ -73,11 +74,16 @@ class EventProcessor:
         # text message content types don't have a url
         resource_url = getattr(event.content, "url", None)
 
+        # convert origin_server_ts to datetime
+        # origin_server_ts is supposed to be the timestamp from the native messaging application
+        origin_server_ts_seconds = event.origin_server_ts / 1000
+        message_timestamp = datetime.fromtimestamp(origin_server_ts_seconds)
+
         # create orm model
         parsed_message = ParsedMessage(
             event_id=event.event_id,
             room_id=event.room_id,
-            message_timestamp=event.origin_server_ts,  # this is the original timestamp the message was sent
+            message_timestamp=message_timestamp,
             matrix_server_hostname=event.origin,
             message_type=event.content.msgtype,
             sender=event.sender,
