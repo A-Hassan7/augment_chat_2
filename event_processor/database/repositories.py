@@ -26,7 +26,11 @@ class ParsedMessagesRepository(BaseRepository):
 
     def get_by_room_id(self, room_id: str):
         with self.Session() as session:
-            statement = select(self.model).where(self.model.room_id == room_id)
+            statement = (
+                select(self.model)
+                .where(self.model.room_id == room_id)
+                .order_by(self.model.message_timestamp.asc())
+            )
             return session.execute(statement).scalars().all()
 
     def create(self, parsed_message: ParsedMessage):
