@@ -35,6 +35,12 @@ class ParsedMessagesRepository(BaseRepository):
 
     def create(self, parsed_message: ParsedMessage):
         with self.Session() as session:
+
+            # need to prevent the session from expiring so that the parsed_message
+            # can still be accessed in the event_processor. Without this the following error is created
+            # sqlalchemy.orm.exc.DetachedInstanceError
+            session.expire_on_commit = False
+
             session.add(parsed_message)
             session.commit()
 
