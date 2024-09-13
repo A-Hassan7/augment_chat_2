@@ -1,6 +1,8 @@
+from fakeredis import FakeStrictRedis
 from rq import Queue, Worker, SimpleWorker
 
 from .connection import RedisConnection
+from config import GlobalConfig
 
 # modules will add tasks to specific queues through this TaskQueue
 # the class will manage the queues for each queue i.e.
@@ -19,20 +21,28 @@ class QueueController:
 
     QUEUES = ["event_processor", "vector_store"]
 
-    def __init__(self):
+    def __init__(self, debug: bool = False):
+
+        self.debug = debug if not GlobalConfig.DEBUG_MODE else GlobalConfig.DEBUG_MODE
+
         # create and test connection to redis
-        self.connection = RedisConnection()
+        # if debugging then use a fake redis connection
+        # https://python-rq.org/docs/testing/#running-jobs-in-unit-tests
+        if self.debug:
+            self.connection = FakeStrictRedis()
+            self.is_async = False
+        else:
+            self.connection = RedisConnection()
+            self.is_async = True
+
         self.connection.ping()
 
     def get_queue(self, queue_name: str) -> Queue:
         self._check_queue_name(queue_name)
-        return Queue(queue_name, connection=self.connection)
+        return Queue(queue_name, connection=self.connection, is_async=self.is_async)
 
-    def get_worker(self, queue_name: Queue, simple: bool = False) -> Worker:
+    def get_worker(self, queue_name: Queue) -> Worker:
         self._check_queue_name(queue_name)
-        if simple:
-            return SimpleWorker(queue_name, connection=self.connection)
-
         return Worker(queue_name, connection=self.connection)
 
     def _check_queue_name(self, queue_name: str):

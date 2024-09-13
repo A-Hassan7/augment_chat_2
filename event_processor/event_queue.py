@@ -5,10 +5,11 @@ from .event_processor import EventProcessor
 class EventProcessorQueue:
 
     def __init__(self):
+
         self.queue_controller = QueueController()
         self.event_processor_queue = self.queue_controller.get_queue("event_processor")
         self.event_processor_worker = self.queue_controller.get_worker(
-            "event_processor", simple=True
+            "event_processor"
         )
 
         self.event_processor = EventProcessor()

@@ -9,9 +9,7 @@ class VectorStoreQueue:
     def __init__(self):
         self.queue_controller = QueueController()
         self.vector_store_queue = self.queue_controller.get_queue("vector_store")
-        self.vector_store_worker = self.queue_controller.get_worker(
-            "vector_store", simple=True
-        )
+        self.vector_store_worker = self.queue_controller.get_worker("vector_store")
 
         self.vector_store = VectorStore()
 
