@@ -10,7 +10,7 @@
 import json
 from datetime import datetime
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from .event_models import BaseEvent, RoomMessageEvent
 from .database.models import ParsedMessage, ProcessedEvent
@@ -58,10 +58,12 @@ class EventProcessor:
 
         if isinstance(event, RoomMessageEvent):
             # insert parsed message event into database
-            self._insert_room_message_event(event)
+            parsed_message = self._insert_room_message_event(event)
             # mark event_id as having been processed so when I do a refresh
             # to grab missing events - I'll know which events have been processed
             self._mark_event_processed(event)
+            # send message to the vector store
+            self._send_message_to_vector_store(parsed_message)
 
     def _insert_room_message_event(self, event: RoomMessageEvent):
         """
@@ -95,6 +97,8 @@ class EventProcessor:
         # insert into parsed messages table
         parsed_message_repository = ParsedMessagesRepository()
         parsed_message_repository.create(parsed_message)
+
+        return parsed_message
 
     def _mark_event_processed(self, event):
         """
@@ -141,3 +145,16 @@ class EventProcessor:
 
         # non m.room.message events are currently not needed by the application so I can imply ignore these
         raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")
+
+    def _send_message_to_vector_store(self, parsed_message: ParsedMessage):
+        """
+        Send the parsed message to the vector store to be processed.
+
+        Args:
+            parsed_message (ParsedMessage): _description_
+        """
+        from vector_store import VectorStoreInterface
+
+        vector_store_interface = VectorStoreInterface()
+        vector_store_interface.enqueue_message(parsed_message)
+        # log

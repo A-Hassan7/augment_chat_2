@@ -1,4 +1,4 @@
-from rq import Queue, Worker
+from rq import Queue, Worker, SimpleWorker
 
 from .connection import RedisConnection
 
@@ -17,7 +17,7 @@ class QueueController:
     Centralized class to register and retrieve queues. Hoping this class comes in handy managing queues and workers internally.
     """
 
-    QUEUES = ["event_processor", "test"]
+    QUEUES = ["event_processor", "vector_store"]
 
     def __init__(self):
         # create and test connection to redis
@@ -28,8 +28,11 @@ class QueueController:
         self._check_queue_name(queue_name)
         return Queue(queue_name, connection=self.connection)
 
-    def get_worker(self, queue_name: Queue) -> Worker:
+    def get_worker(self, queue_name: Queue, simple: bool = False) -> Worker:
         self._check_queue_name(queue_name)
+        if simple:
+            return SimpleWorker(queue_name, connection=self.connection)
+
         return Worker(queue_name, connection=self.connection)
 
     def _check_queue_name(self, queue_name: str):
