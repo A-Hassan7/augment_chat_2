@@ -29,7 +29,6 @@ class RoomMessageEvent(BaseEvent):
             "m.text": TextMessageContent,
             "m.audio": AudioMessageContent,
             "m.image": ImageMessageContent,
-            "m.notice": NoticeMessageContent,
             "m.video": VideoMessageContent,
         }
 
