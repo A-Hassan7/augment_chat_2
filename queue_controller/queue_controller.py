@@ -19,7 +19,7 @@ class QueueController:
     Centralized class to register and retrieve queues. Hoping this class comes in handy managing queues and workers internally.
     """
 
-    QUEUES = ["event_processor", "vector_store"]
+    QUEUES = ["event_processor", "vector_store", "llm"]
 
     def __init__(self, debug: bool = False):
 
@@ -57,6 +57,6 @@ class QueueController:
         """
         if not queue_name in self.QUEUES:
             raise ValueError(
-                f"Specified queue name ({queue_name}) has not been registered with the QueueController. ",
+                f"Specified queue name ({queue_name}) has not been registered with the QueueController. "
                 f"Available queues include {self.QUEUES}",
             )

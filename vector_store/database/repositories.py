@@ -138,7 +138,23 @@ class TranscriptChunksRepository(BaseRepository):
 
     def create(self, transcript_chunk: TranscriptChunk):
         with self.Session() as session:
+
+            # need to prevent the session from expiring so that the chunk
+            # can still be accessed in the vectorstore. Without this the following error is created
+            # sqlalchemy.orm.exc.DetachedInstanceError
+            session.expire_on_commit = False
+
             session.add(transcript_chunk)
+            session.commit()
+
+    def insert_embedding(self, transcript_chunk_id: str, embedding):
+        with self.Session() as session:
+            statement = (
+                update(self.model)
+                .where(self.model.id == transcript_chunk_id)
+                .values(embedding=embedding)
+            )
+            session.execute(statement)
             session.commit()
 
     def get_max_message_depth_by_room_id(self, room_id: str):

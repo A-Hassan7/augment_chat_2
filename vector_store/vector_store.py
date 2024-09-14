@@ -9,9 +9,31 @@
 import math
 from datetime import datetime, timedelta
 
+from llm_service import LLMInterface
 from .transcriber import Transcriber
 from .database.repositories import TranscriptsRepository, TranscriptChunksRepository
 from .database.models import Transcript, TranscriptChunk
+
+
+def insert_embedding_on_success(job, connection, result, *args, **kawargs):
+    """
+    Once the embedding has been generated it needs to be inserted into the database.
+    I'm using RQ's on_success feature so when the embedding task is done, this function will trigger
+
+    https://python-rq.org/docs/#success-callback
+
+    IMPORTANT: this implementation expects the transcript chunk id to be passed as metadata to the job.
+    """
+    transcript_chunks_repository = TranscriptChunksRepository()
+
+    transcript_chunk_id = job.meta.get("transcript_chunk.id")
+    if not transcript_chunk_id:
+        raise ValueError(
+            "The job meta MUST contain the transcript_chunk.id in order to insert the embedding"
+        )
+
+    transcript_chunks_repository.insert_embedding(transcript_chunk_id, embedding=result)
+    # log
 
 
 class VectorStore:
@@ -41,6 +63,7 @@ class VectorStore:
         self.transcriber = Transcriber()
         self.transcripts_repository = TranscriptsRepository()
         self.transcript_chunks_repository = TranscriptChunksRepository()
+        self.llm = LLMInterface()
 
     @staticmethod
     def process_message(parsed_message):
@@ -83,7 +106,7 @@ class VectorStore:
         if not num_chunks:
             # this will check to see if we can create chunks for the room
             # if not then it'll queue a task to take place to check again.
-            self.initialise_room(room_id, delay=timedelta(seconds=5))
+            self.initialise_room(room_id)
             return
 
         # inserts new chunks into the database if there are enough messages
@@ -110,9 +133,9 @@ class VectorStore:
             # then none of the messages will trigger this
             # I need this to trigger after all the messages have been received
             # TODO: test
-            from vector_store_queue import VectorStoreQueueInterface
+            from vector_store_queue import VectorStoreQueue
 
-            queue = VectorStoreQueueInterface()
+            queue = VectorStoreQueue()
             queue.enqueue_room_initialisation(room_id, delay=timedelta(seconds=5))
             return
 
@@ -127,7 +150,7 @@ class VectorStore:
         # insert chunks into the database
         # TODO: how do I handle embeddings?
         for chunk in chunks:
-            self.transcript_chunks_repository.create(chunk)
+            self._insert_chunk_into_database(chunk, create_embedding=True)
 
     def update_room(self, room_id):
 
@@ -150,7 +173,7 @@ class VectorStore:
 
         chunks = self._create_transcript_chunks(new_transcripts)
         for chunk in chunks:
-            self.transcript_chunks_repository.create(chunk)
+            self._insert_chunk_into_database(chunk, create_embedding=True)
 
     def _is_oldest_message_received(self, room_id: str) -> bool:
         """
@@ -237,7 +260,6 @@ class VectorStore:
 
         document = "\n".join(transcripts)
 
-        # TODO: handle embeddings
         return TranscriptChunk(
             room_id=room_ids[0],
             event_ids=event_ids,
@@ -249,8 +271,32 @@ class VectorStore:
             document=document,
         )
 
-    def create_embeddings(self):
-        pass
+    def _insert_chunk_into_database(
+        self, chunk: TranscriptChunk, create_embedding: bool = False
+    ):
+        """
+        Inserts a transcript chunk into the database.
+
+        If create_embedding is True then this will queue a request with the LLM service to
+        create the embedding and insert into the database on completion.
+
+        Args:
+            chunk (_type_): _description_
+            create_embeddings (bool, optional): _description_. Defaults to False.
+        """
+        # insert chunk into the database
+        self.transcript_chunks_repository.create(chunk)
+
+        # request embedding
+        if create_embedding:
+
+            # send request to llm
+            self.llm.enqueue_embedding_request(
+                text=chunk.document,
+                on_success=insert_embedding_on_success,
+                meta={"transcript_chunk.id": chunk.id},
+            )
+            # log
 
     def retrieve(self):
         pass
