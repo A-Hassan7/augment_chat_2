@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select, update, text
+from sqlalchemy import select, update, text, delete
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, ParsedMessage, ProcessedEvent
@@ -24,6 +24,11 @@ class ParsedMessagesRepository(BaseRepository):
 
     model = ParsedMessage
 
+    def get_by_event_id(self, event_id: str):
+        with self.Session() as session:
+            statement = select(self.model).where(self.model.event_id == event_id)
+            return session.execute(statement).scalar()
+
     def get_by_room_id(self, room_id: str):
         with self.Session() as session:
             statement = (
@@ -31,6 +36,11 @@ class ParsedMessagesRepository(BaseRepository):
                 .where(self.model.room_id == room_id)
                 .order_by(self.model.message_timestamp.asc())
             )
+            return session.execute(statement).scalars().all()
+
+    def get_unique_room_ids(self):
+        with self.Session() as session:
+            statement = select(self.model.room_id).distinct()
             return session.execute(statement).scalars().all()
 
     def create(self, parsed_message: ParsedMessage):
@@ -44,10 +54,22 @@ class ParsedMessagesRepository(BaseRepository):
             session.add(parsed_message)
             session.commit()
 
+    def delete_by_event_id(self, event_id: str):
+        with self.Session() as session:
+            statement = delete(self.model).where(self.model.event_id == event_id)
+            session.execute(statement)
+            session.commit()
+
 
 class ProcessedEventsRepository(BaseRepository):
 
     model = ProcessedEvent
+
+    def delete_by_event_id(self, event_id: str):
+        with self.Session() as session:
+            statement = delete(self.model).where(self.model.event_id == event_id)
+            session.execute(statement)
+            session.commit()
 
     def get_by_event_id(self, event_id: str):
         with self.Session() as session:
