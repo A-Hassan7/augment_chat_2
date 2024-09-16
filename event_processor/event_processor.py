@@ -63,7 +63,9 @@ class EventProcessor:
             # to grab missing events - I'll know which events have been processed
             self._mark_event_processed(event)
             # send message to the vector store
-            self._send_message_to_vector_store(parsed_message)
+            job = self._send_message_to_vector_store(parsed_message)
+
+            return job
 
     def _insert_room_message_event(self, event: RoomMessageEvent):
         """
@@ -139,9 +141,11 @@ class EventProcessor:
             except NoContentInRoomMessageEvent as e:
                 # log
                 print(e)
+                return
             except UnsupportedMessageContentType as e:
                 # log
                 print(e)
+                return
 
         # non m.room.message events are currently not needed by the application so I can imply ignore these
         raise UnsupportedEventTypeError(f"Unsupported event type {event_type}")
@@ -156,5 +160,5 @@ class EventProcessor:
         from vector_store import VectorStoreInterface
 
         vector_store_interface = VectorStoreInterface()
-        vector_store_interface.enqueue_message(parsed_message)
+        return vector_store_interface.enqueue_message(parsed_message)
         # log
