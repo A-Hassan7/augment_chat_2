@@ -1,7 +1,7 @@
-from sqlalchemy import Column, Integer, Text, DateTime, func, ARRAY, Float
+from sqlalchemy import Column, Integer, Text, DateTime, func, ARRAY
 from sqlalchemy.orm import DeclarativeBase
 
-# from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import Vector
 
 
 #### VECTOR STORE TABLES
@@ -40,7 +40,7 @@ class TranscriptChunk(Base, TimestampMixin):
     max_message_timestamp = Column(DateTime, nullable=False)
     num_transcripts = Column(Integer, nullable=False)
     document = Column(Text, nullable=False)
-    embedding = Column(ARRAY(Float))  # TODO: use Vector type instead
+    embedding = Column(Vector(1536))
 
 
 #### MATRIX LOGICAL REPLICATION TABLE
