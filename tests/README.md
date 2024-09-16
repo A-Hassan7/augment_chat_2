@@ -1,0 +1,3 @@
+- make queues single processess for testing #
+- create a main runner stript that launches all the services (event listener/processor, vectorstore) #
+- send message, verify job status, check db insert, check expected output
