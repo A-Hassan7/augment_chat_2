@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select, update, text, func
+from sqlalchemy import select, update, text, func, delete
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, MatrixProfile, Transcript, TranscriptChunk
@@ -35,6 +35,12 @@ class TranscriptsRepository(BaseRepository):
         with self.Session() as session:
             statement = select(self.model).where(self.model.event_id == event_id)
             return session.execute(statement).scalar()
+
+    def delete_by_event_id(self, event_id: str):
+        with self.Session() as session:
+            statement = delete(self.model).where(self.model.event_id == event_id)
+            session.execute(statement)
+            session.commit()
 
     def get_by_room_id(self, room_id: str):
         with self.Session() as session:
@@ -128,6 +134,12 @@ class TranscriptChunksRepository(BaseRepository):
         with self.Session() as session:
             statement = select(self.model).where(self.model.room_id == room_id)
             return session.execute(statement).scalars().all()
+
+    def delete_by_room_id(self, room_id: str):
+        with self.Session() as session:
+            statement = delete(self.model).where(self.model.room_id == room_id)
+            session.execute(statement)
+            session.commit()
 
     def get_count_by_room_id(self, room_id: str):
         with self.Session() as session:
