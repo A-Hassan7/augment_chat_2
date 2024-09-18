@@ -42,6 +42,12 @@ class TranscriptsRepository(BaseRepository):
             session.execute(statement)
             session.commit()
 
+    def delete_by_room_id(self, room_id: str):
+        with self.Session() as session:
+            statement = delete(self.model).where(self.model.room_id == room_id)
+            session.execute(statement)
+            session.commit()
+
     def get_by_room_id(self, room_id: str):
         with self.Session() as session:
             statement = (

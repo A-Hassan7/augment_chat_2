@@ -12,7 +12,10 @@ from vector_store.database.repositories import (
     TranscriptChunksRepository,
 )
 from event_processor.database.models import ParsedMessage
+from config import GlobalConfig
 
+# make queues synchronous
+GlobalConfig.DEBUG_MODE = True
 
 TEST_ROOM_ID = "test"
 NUM_TEST_MESSAGES = 30
@@ -40,6 +43,10 @@ def test_process_message(parsed_messages):
     transcript_repository = TranscriptsRepository()
     transcript_chunks_repository = TranscriptChunksRepository()
 
+    # clean up existing tests if they exist
+    transcript_repository.delete_by_room_id(TEST_ROOM_ID)
+    transcript_chunks_repository.delete_by_room_id(TEST_ROOM_ID)
+
     # process messages
     for message in parsed_messages:
 
@@ -49,9 +56,12 @@ def test_process_message(parsed_messages):
         transcript = transcript_repository.get_by_event_id(message.event_id)
         assert transcript, "Transcript not created"
 
-    # TODO: check that a chunk has been created
+    # check that a chunk has been created
+    if NUM_TEST_MESSAGES >= vector_store.MESSAGES_CHUNK_SIZE:
+        chunks = transcript_chunks_repository.get_by_room_id(TEST_ROOM_ID)
+        assert chunks, "Chunk has not been created"
+        assert chunks[0].embedding is not None, "Embeddings have not been created"
 
     # cleanup
-    event_ids = [message.event_id for message in parsed_messages]
-    [transcript_repository.delete_by_event_id(event_id) for event_id in event_ids]
+    transcript_repository.delete_by_room_id(TEST_ROOM_ID)
     transcript_chunks_repository.delete_by_room_id(TEST_ROOM_ID)
