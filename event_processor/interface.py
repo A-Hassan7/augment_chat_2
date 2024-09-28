@@ -12,8 +12,9 @@ class EventProcessorInterface:
         self.event_processor_queue = EventProcessorQueue()
         self.parsed_messages_repository = ParsedMessagesRepository()
 
-    def backfill(self):
-        self.event_backfiller.process_unprocessed_events()
+    def backfill(self, room_id: str = None):
+        # no room id will result in all events being processed
+        self.event_backfiller.process_unprocessed_events(room_id)
 
     def run_event_listener(self):
         self.event_listener.run()

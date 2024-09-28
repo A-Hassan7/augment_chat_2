@@ -14,14 +14,16 @@ class EventBackfiller:
     def __init__(self):
         self.event_processor_queue = EventProcessorQueue()
 
-    def process_unprocessed_events(self):
+    def process_unprocessed_events(self, room_id: str = None):
         """
         Processes events that have not yet been processed by the event processor.
+
+        If room_id is not specified all events will be processed
         """
 
         # these are events that don't exist in the event_processor.processed_events table but
         # do exist in the public.event_json table from matrix
-        unprocessed_events = self.unprocessed_events
+        unprocessed_events = self.get_unprocessed_events(room_id)
         for event_id, event_json in unprocessed_events:
             # create a payload that complies with the EventPayload model
             # this is required because that's the expected input into the event processor
@@ -32,18 +34,21 @@ class EventBackfiller:
 
             self.event_processor_queue.enqueue_event(payload)
 
-    @property
-    def unprocessed_events(self):
+    def get_unprocessed_events(self, room_id: str = None):
         """
         Returns unprocessed events by comparing the public.event_json table from the matrix server to the
         event_processor.processed_events table. If an event exists in the matrix table but not in the processed_events table
         then it has not been processed.
 
+        If room_id is not provided, all events will be returned
+
         Returns:
             _type_: _description_
         """
         unprocessed_events_repository = UnprocessedEventsViewRepository()
-        unprocessed_events = unprocessed_events_repository.get_unprocessed_events()
+        unprocessed_events = unprocessed_events_repository.get_unprocessed_events(
+            room_id
+        )
 
         return unprocessed_events
 

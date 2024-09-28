@@ -87,12 +87,15 @@ class UnprocessedEventsViewRepository:
     def __init__(self):
         self.Session = sessionmaker(bind=DatabaseEngine())
 
-    def get_unprocessed_events(self):
+    def get_unprocessed_events(self, room_id: str = None):
         """
         Return a list of events that haven't been processed.
 
         This compares the processed_events table with the matrix event_json table to find events that exist
         in the matrix event_json table but not the processed_events table.
+
+        Args:
+            room_id (str, optional): Get unprocessed events for a specific room_id if provided
         """
         with self.Session() as session:
             query = """
@@ -102,4 +105,8 @@ class UnprocessedEventsViewRepository:
                 on events.event_id = processed.event_id
             where processed.event_id is null
             """
+
+            if room_id:
+                query += f" and events.room_id = '{room_id}'"
+
             return session.execute(text(query)).all()
