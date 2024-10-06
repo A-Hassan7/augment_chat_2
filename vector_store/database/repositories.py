@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select, update, text, func, delete
+from sqlalchemy import select, update, text, func, delete, asc, desc
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, MatrixProfile, Transcript, TranscriptChunk
@@ -48,13 +48,33 @@ class TranscriptsRepository(BaseRepository):
             session.execute(statement)
             session.commit()
 
-    def get_by_room_id(self, room_id: str):
+    def get_by_room_id(
+        self,
+        room_id: str,
+        order_by_timestamp_asc: bool = True,
+        limit: int = None,
+        until_message_event_id: str = None,
+    ):
         with self.Session() as session:
+
+            # order transcripts by timestamp in specified order
+            order_by_func = asc if order_by_timestamp_asc else desc
+
             statement = (
                 select(self.model)
                 .where(self.model.room_id == room_id)
-                .order_by(self.model.message_timestamp.asc())
+                .order_by(order_by_func(self.model.message_timestamp))
             )
+
+            # get the depth of the message where we want to cut the transcripts off at
+            if until_message_event_id:
+                until_event = self.get_by_event_id(until_message_event_id)
+                # add max depth to the where clause to limit messages depth
+                statement = statement.where(self.model.depth <= until_event.depth)
+
+            if limit:
+                statement = statement.limit(limit)
+
             return session.execute(statement).scalars().all()
 
     def get_count_by_room_id(self, room_id: str):
