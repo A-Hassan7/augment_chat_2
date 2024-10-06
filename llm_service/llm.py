@@ -2,6 +2,9 @@ from .providers import OpenAIProvider
 
 
 class LLM:
+    """
+    TODO: log requests sent in the database
+    """
 
     def __init__(self):
         self.provider = OpenAIProvider()
@@ -11,5 +14,7 @@ class LLM:
         self = LLM()
         return self.provider.create_embedding(text)
 
-    def generate(self):
-        pass
+    @staticmethod
+    def create_completion(prompt):
+        self = LLM()
+        return self.provider.create_completion(prompt)

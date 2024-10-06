@@ -27,6 +27,23 @@ class LLMQueue:
             meta=meta,
         )
 
+    def enqueue_completion_request(self, prompt, on_success, meta, **kwargs):
+        """
+        Create completion task
+
+        Args:
+            prompt (str): the prompt
+            on_success (func): function to execute on success
+            meta (dict): metadata to add to the job
+        """
+        return self.llm_queue.enqueue(
+            self.llm.create_completion,
+            kwargs={"prompt": prompt},
+            on_success=on_success,
+            meta=meta,
+            **kwargs,
+        )
+
     def run_worker(self):
         """
         Run a worker to process events in the event processor queue
