@@ -38,8 +38,7 @@ class MatrixClient:
 
         self.config = MatrixConfig
 
-        logger_instance = Logger()
-        logger_instance.FILENAME = "./logs.matrix.txt"
+        logger_instance = Logger(file="./logs.matrix.txt")
         self.logger = logger_instance.get_logger(self.__class__.__name__)
 
     async def register_user(self, username: str) -> MatrixUser:
