@@ -2,6 +2,7 @@ import json
 
 from pydantic import ValidationError
 
+from logger import Logger
 from .database.repositories import UnprocessedEventsViewRepository
 from .event_processor import EventPayload
 from .event_queue import EventProcessorQueue
@@ -12,6 +13,9 @@ class EventBackfiller:
     # process them/add them to the queue
 
     def __init__(self):
+        logger_instance = Logger()
+        self.logger = logger_instance.get_logger(name=__class__.__name__)
+
         self.event_processor_queue = EventProcessorQueue()
 
     def process_unprocessed_events(self, room_id: str = None):
@@ -21,6 +25,10 @@ class EventBackfiller:
         If room_id is not specified all events will be processed
         """
 
+        self.logger.debug(
+            f"Running event backfiller for {'all rooms' if not room_id else room_id}"
+        )
+
         # these are events that don't exist in the event_processor.processed_events table but
         # do exist in the public.event_json table from matrix
         unprocessed_events = self.get_unprocessed_events(room_id)
@@ -29,10 +37,14 @@ class EventBackfiller:
             # this is required because that's the expected input into the event processor
             payload = self._create_payload(event_id, event_json)
             if not payload:
-                # log
-                print("Payload could not be constructed")
+                self.logger.error(
+                    f"Payload could not be constructed for event id: {event_id}"
+                )
 
             self.event_processor_queue.enqueue_event(payload)
+            self.logger.info(
+                f"Added message to event processor queue with event id: {event_id}"
+            )
 
     def get_unprocessed_events(self, room_id: str = None):
         """
@@ -69,8 +81,7 @@ class EventBackfiller:
         try:
             EventPayload.model_validate_json(payload)
         except ValidationError as e:
-            # log
-            print(e)
+            self.logger.error(e)
             return
 
         return payload

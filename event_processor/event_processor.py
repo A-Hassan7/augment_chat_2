@@ -12,6 +12,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from logger import Logger
 from .event_models import BaseEvent, RoomMessageEvent
 from .database.models import ParsedMessage, ProcessedEvent
 from .database.repositories import ParsedMessagesRepository, ProcessedEventsRepository
@@ -33,6 +34,10 @@ class EventProcessor:
     # task queue
     # logging
 
+    def __init__(self):
+        logger_instance = Logger()
+        self.logger = logger_instance.get_logger(name=self.__class__.__name__)
+
     @staticmethod
     def process_event(payload: str):
         """
@@ -48,12 +53,13 @@ class EventProcessor:
         payload_json = json.loads(payload)
         payload = EventPayload(**payload_json)
 
+        self.logger.info("Payload received with event id: {payload.event_id}")
+
         # create internal event object
         try:
             event = self._create_event_object_from_payload(payload)
         except UnsupportedEventTypeError as e:
-            # log
-            print(e)
+            self.logger.error(f"Unsupported event type: {e}")
             return
 
         if isinstance(event, RoomMessageEvent):
@@ -64,6 +70,10 @@ class EventProcessor:
             self._mark_event_processed(event)
             # send message to the vector store
             job = self._send_message_to_vector_store(parsed_message)
+
+            self.logger.info(
+                f"Message enqueued with vector store with event id: {event.event_id} and job id: {job.id}"
+            )
 
             return job
 
@@ -100,6 +110,10 @@ class EventProcessor:
         parsed_message_repository = ParsedMessagesRepository()
         parsed_message_repository.create(parsed_message)
 
+        self.logger.info(
+            f"Inserted event into parsed messages table with event id: {event.event_id}"
+        )
+
         return parsed_message
 
     def _mark_event_processed(self, event):
@@ -115,6 +129,10 @@ class EventProcessor:
         # insert into the processed_events table
         processed_events_repository = ProcessedEventsRepository()
         processed_events_repository.create(processed_event)
+
+        self.logger.info(
+            f"Marked event as processed in processed events table with event id: {event.event_id}"
+        )
 
     def _create_event_object_from_payload(
         self, event_payload: EventPayload
@@ -139,12 +157,10 @@ class EventProcessor:
             try:
                 return RoomMessageEvent(**event_json)
             except NoContentInRoomMessageEvent as e:
-                # log
-                print(e)
+                self.logger.error(f"No content in room message event: {e}")
                 return
             except UnsupportedMessageContentType as e:
-                # log
-                print(e)
+                self.logger.error(f"Unsupported message content type: {e}")
                 return
 
         # non m.room.message events are currently not needed by the application so I can imply ignore these
@@ -161,4 +177,3 @@ class EventProcessor:
 
         vector_store_interface = VectorStoreInterface()
         return vector_store_interface.enqueue_message(parsed_message)
-        # log

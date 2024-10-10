@@ -1,4 +1,7 @@
+import json
 import psycopg2
+
+from logger import Logger
 
 from .database.engine import DatabaseEngine
 from .config import EventListenerConfig
@@ -8,6 +11,9 @@ from .event_queue import EventProcessorQueue
 class EventListener:
 
     def __init__(self):
+        logger_instance = Logger(file="logs.txt")
+        self.logger = logger_instance.get_logger(self.__class__.__name__)
+
         self.engine = DatabaseEngine()
         self.config = EventListenerConfig()
         self.event_processor_queue = EventProcessorQueue()
@@ -27,6 +33,8 @@ class EventListener:
         # start listening to the channel
         cursor.execute(f"LISTEN {self.config.NOTIFY_CHANNEL};")
 
+        self.logger.debug("Starting event listener")
+
         # loop
         while True:
 
@@ -38,9 +46,14 @@ class EventListener:
                 notification = notifies.pop(0)
 
                 if not notification.payload:
+                    self.logger.critical("Notification payload is missing")
                     raise ValueError("Notifaciton payload is missing")
 
-                print(notification.payload)
+                event_id = json.loads(notification.payload).get("event_id")
+                self.logger.info(f"Received notification with event id: {event_id}")
 
                 # add event to queue
                 self.event_processor_queue.enqueue_event(notification.payload)
+                self.logger.info(
+                    f"Added event to event processor queue with event id: {event_id} "
+                )
