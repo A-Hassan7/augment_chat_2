@@ -9,6 +9,7 @@
 import math
 from datetime import datetime, timedelta
 
+from logger import Logger
 from llm_service import LLMInterface
 from .transcriber import Transcriber
 from .database.repositories import TranscriptsRepository, TranscriptChunksRepository
@@ -60,10 +61,12 @@ class VectorStore:
     OLDEST_ROOM_MESSAGE_WAIT_TIME_SECONDS = 10
 
     def __init__(self):
+        logger_instance = Logger()
+        self.logger = logger_instance.get_logger(name=__class__.__name__)
+
         self.transcriber = Transcriber()
         self.transcripts_repository = TranscriptsRepository()
         self.transcript_chunks_repository = TranscriptChunksRepository()
-        self.llm = LLMInterface()
 
     @staticmethod
     def process_message(parsed_message):
@@ -86,17 +89,27 @@ class VectorStore:
 
         self = VectorStore()
 
+        self.logger.info(f"Message received with event id: {parsed_message.event_id}")
+
         # for now ignore anything that isn't a text message
         # TODO: this ignores images and voice notes
         if not parsed_message.message_type == "m.text":
+            self.logger.warning(
+                "Message types other than m.text are not supported. "
+                f"Message of type {parsed_message.message_type} received for event id: {parsed_message.event_id}"
+            )
             return
 
         # transcript already exists so do nothing
         if self.transcripts_repository.get_by_event_id(parsed_message.event_id):
+            self.logger.debug(
+                f"Transcript already exists for event id: {parsed_message.event_id}"
+            )
             return
 
         # transcribe the message and insert into the database
         self.transcriber.transcribe(parsed_message, insert_into_database=True)
+        self.logger.info(f"Transcript created for event id: {parsed_message.event_id}")
 
         room_id = parsed_message.room_id
 
@@ -104,6 +117,9 @@ class VectorStore:
         # if not then initialise the room i.e. create chunks
         num_chunks = self.transcript_chunks_repository.get_count_by_room_id(room_id)
         if not num_chunks:
+            self.logger.info(
+                f"No existing transcript chunks found for room id: {room_id}"
+            )
             # this will check to see if we can create chunks for the room
             # if not then it'll queue a task to take place to check again.
             self.initialise_room(room_id)
@@ -135,22 +151,38 @@ class VectorStore:
             # TODO: test
             from vector_store_queue import VectorStoreQueue
 
+            self.logger.info(
+                f"I hasn't been long enough since the oldest message was received to create transcript chunk for room id: {room_id}"
+            )
+
             queue = VectorStoreQueue()
             queue.enqueue_room_initialisation(room_id, delay=timedelta(seconds=5))
+            self.logger.info(
+                f"Enqueuing room initialisation for room id: {room_id} with a delay of 5 seconds"
+            )
             return
 
         # are there enough transcripts to create a chunk?
         num_transcripts = self.transcripts_repository.get_count_by_room_id(room_id)
         if not num_transcripts >= self.MESSAGES_CHUNK_SIZE:
+            self.logger.info(
+                f"Not enough transcripts to create a transcript chunk for room id: {room_id}"
+            )
             return
 
         all_transcripts = self.transcripts_repository.get_by_room_id(room_id)
         chunks = self._create_transcript_chunks(all_transcripts)
+        self.logger.info(
+            f"Created {len(chunks)} initial chunk(s) for room id: {room_id}"
+        )
 
         # insert chunks into the database
         # TODO: how do I handle embeddings?
         for chunk in chunks:
             self._insert_chunk_into_database(chunk, create_embedding=True)
+            self.logger.info(
+                f"Added chunk to transcript chunks table for room id: {room_id}"
+            )
 
     def update_room(self, room_id):
 
@@ -168,7 +200,10 @@ class VectorStore:
             chunk_overlap=self.MESSAGES_CHUNK_OVERLAP,
         )
         if not len(new_transcripts) >= self.MESSAGES_CHUNK_SIZE:
-            # log
+            self.logger.debug(
+                f"Not enough transcripts to create a new chunk for room id {room_id}. "
+                f"{len(new_transcripts)} out of the {self.MESSAGES_CHUNK_SIZE} required."
+            )
             return
 
         chunks = self._create_transcript_chunks(new_transcripts)
@@ -287,16 +322,32 @@ class VectorStore:
         # insert chunk into the database
         self.transcript_chunks_repository.create(chunk)
 
+        self.logger.info(
+            f"New transcript chunk inserted into database for room id {chunk.room_id}"
+        )
+
         # request embedding
         if create_embedding:
 
+            llm = LLMInterface()
             # send request to llm
-            self.llm.enqueue_embedding_request(
+            llm.enqueue_embedding_request(
                 text=chunk.document,
                 on_success=insert_embedding_on_success,
                 meta={"transcript_chunk.id": chunk.id},
             )
-            # log
+            self.logger.info(f"Embedding request enqueued for room_id: {chunk.room_id}")
 
     def retrieve(self):
+        # TODO:
+        # process your real messages
+        # handle rate limits openai
+        # implement room_id filtering so only rooms with a is_augmentation_enabled = True
+        # can be processed by the vectorstore
+        # if not is_augmentation_enabled then vectorstore ignore messages
+        # if enabled then run backfiller first to grab all missed messages
+        # build retrieval
+        # ability to run everything synchronously without the queue, will help testing #
+        # start building the summarizers so I know what sort of retrieval to implement
+
         pass
