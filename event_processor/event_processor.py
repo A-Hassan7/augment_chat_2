@@ -53,7 +53,7 @@ class EventProcessor:
         payload_json = json.loads(payload)
         payload = EventPayload(**payload_json)
 
-        self.logger.info("Payload received with event id: {payload.event_id}")
+        self.logger.info(f"Payload received with event id: {payload.event_id}")
 
         # create internal event object
         try:
