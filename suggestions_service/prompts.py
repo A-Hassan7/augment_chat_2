@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from ast import literal_eval
 
+from logger import Logger
+
 
 class BasePrompt(ABC):
     prompt: str
@@ -36,12 +38,14 @@ Use my instructions to provide 5 joke suggestions based on the most recent messa
 
     def parse_response(self, response):
 
+        logger_instance = Logger()
+        logger = logger_instance.get_logger(__class__.__name__)
+
         try:
             json = literal_eval(response.replace("```json", "").replace("```", ""))
             jokes = json["jokes"]
         except ValueError as e:
-            # log
-            print(e)
+            logger.error(f"Response could not be parsed, try re-generating. {e}")
             raise ValueError("Response could not be parsed, try re-generating")
 
         return jokes

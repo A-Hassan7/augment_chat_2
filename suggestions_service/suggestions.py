@@ -1,6 +1,7 @@
 from vector_store import VectorStoreInterface
 from llm_service import LLMInterface
 
+from logger import Logger
 from .prompts import JokeSuggestionPrompt
 from .database import models
 from .database.repositories import SuggestionsRepository
@@ -9,12 +10,16 @@ from .database.repositories import SuggestionsRepository
 class Suggestions:
 
     def __init__(self):
+        logger_instance = Logger()
+        self.logger = logger_instance.get_logger(name=__class__.__name__)
         self.vector_store = VectorStoreInterface()
         self.llm = LLMInterface()
 
         self.suggestions_repository = SuggestionsRepository()
 
     def generate_jokes(self, room_id: str, until_message_event_id: str = None):
+
+        self.logger.info(f"Generating joke for room id: {room_id}")
 
         # TODO: replace with enum class
         suggestion_type = "joke"
@@ -50,6 +55,9 @@ class Suggestions:
                 "prompt_class": prompt,
             },
         )
+        self.logger.info(
+            f"Joke prompt completion request enqueued for room id: {room_id} and job id: {job.id}"
+        )
 
     @staticmethod
     def process_suggestion_on_success(job, connection, result, *args, **kawargs):
@@ -59,6 +67,14 @@ class Suggestions:
 
         https://python-rq.org/docs/#success-callback
         """
+
+        logger_instance = Logger()
+        logger = logger_instance.get_logger(__class__.__name__)
+
+        logger.info(
+            f"Received suggestion result for room id: {job.meta['room_id']} and job id: {job.id}"
+        )
+
         # insert into the database
         # send to wheverever it needs to be sent
         print(result)
@@ -82,9 +98,13 @@ class Suggestions:
         )
 
         suggestions_repository.create(suggestions_object)
+        logger.info(f"Suggestion inserted for room id: {job.meta['room_id']}")
 
     @staticmethod
     def report_failure(job, connection, type, value, traceback):
         # log failed suggestion requests
         # add them to the database?
-        print(traceback)
+        logger_instance = Logger()
+        logger = logger_instance.get_logger(__class__.__name__)
+
+        logger.error(f"Suggestion task failed with error message: {traceback}")
