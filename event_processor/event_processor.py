@@ -63,19 +63,24 @@ class EventProcessor:
             return
 
         if isinstance(event, RoomMessageEvent):
-            # insert parsed message event into database
-            parsed_message = self._insert_room_message_event(event)
-            # mark event_id as having been processed so when I do a refresh
-            # to grab missing events - I'll know which events have been processed
-            self._mark_event_processed(event)
-            # send message to the vector store
-            job = self._send_message_to_vector_store(parsed_message)
 
-            self.logger.info(
-                f"Message enqueued with vector store with event id: {event.event_id} and job id: {job.id}"
-            )
+            try:
+                # insert parsed message event into database
+                parsed_message = self._insert_room_message_event(event)
+                # mark event_id as having been processed so when I do a refresh
+                # to grab missing events - I'll know which events have been processed
+                self._mark_event_processed(event)
+                # send message to the vector store
+                job = self._send_message_to_vector_store(parsed_message)
 
-            return job
+                self.logger.info(
+                    f"Message enqueued with vector store with event id: {event.event_id} and job id: {job.id}"
+                )
+
+                return job
+
+            except Exception as e:
+                self.logger.error(e)
 
     def _insert_room_message_event(self, event: RoomMessageEvent):
         """
