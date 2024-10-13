@@ -21,19 +21,23 @@ class QueueController:
 
     QUEUES = ["event_processor", "vector_store", "llm"]
 
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, use_fake_redis: bool = False):
 
         self.debug = debug if not GlobalConfig.DEBUG_MODE else GlobalConfig.DEBUG_MODE
+        self.use_fake_redis = (
+            use_fake_redis
+            if not GlobalConfig.USE_FAKE_REDIS
+            else GlobalConfig.USE_FAKE_REDIS
+        )
 
         # create and test connection to redis
-        # if debugging then use a fake redis connection
+        # if debugging then disable async
+        # if fakeredis then use a redis emulator thing instead of a real redis connection
         # https://python-rq.org/docs/testing/#running-jobs-in-unit-tests
-        if self.debug:
-            self.connection = FakeStrictRedis()
-            self.is_async = False
-        else:
-            self.connection = RedisConnection()
-            self.is_async = True
+        self.is_async = False if self.debug else True
+        self.connection = (
+            FakeStrictRedis() if self.use_fake_redis else RedisConnection()
+        )
 
         self.connection.ping()
 
