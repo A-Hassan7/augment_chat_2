@@ -68,3 +68,6 @@ class LLMInterface:
             on_failure=on_failure,
             meta=meta,
         )
+
+    def run_worker(self):
+        self.llm_queue.run_worker()
