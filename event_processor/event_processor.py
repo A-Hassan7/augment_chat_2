@@ -73,10 +73,6 @@ class EventProcessor:
                 # send message to the vector store
                 job = self._send_message_to_vector_store(parsed_message)
 
-                self.logger.info(
-                    f"Message enqueued with vector store with event id: {event.event_id} and job id: {job.id}"
-                )
-
                 return job
 
             except Exception as e:
@@ -162,10 +158,10 @@ class EventProcessor:
             try:
                 return RoomMessageEvent(**event_json)
             except NoContentInRoomMessageEvent as e:
-                self.logger.error(f"No content in room message event: {e}")
+                self.logger.warning(f"No content in room message event: {e}")
                 return
             except UnsupportedMessageContentType as e:
-                self.logger.error(f"Unsupported message content type: {e}")
+                self.logger.warning(f"Unsupported message content type: {e}")
                 return
 
         # non m.room.message events are currently not needed by the application so I can imply ignore these
@@ -180,5 +176,14 @@ class EventProcessor:
         """
         from vector_store import VectorStoreInterface
 
-        vector_store_interface = VectorStoreInterface()
-        return vector_store_interface.enqueue_message(parsed_message)
+        try:
+            vector_store_interface = VectorStoreInterface()
+            job = vector_store_interface.enqueue_message(parsed_message)
+
+            self.logger.info(
+                f"Message enqueued with vector store with event id: {parsed_message.event_id} and job id: {job.id}"
+            )
+        except Exception as e:
+            self.logger.error(e)
+
+        return job
