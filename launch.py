@@ -1,4 +1,8 @@
+import asyncio
+
 from config import GlobalConfig
+
+from event_processor import EventProcessorInterface
 
 # when running in debug mode I only need to initialise the event listener
 # the event listener acts as the triggering event all/most other processes
@@ -10,17 +14,8 @@ if debug:
     GlobalConfig.DEBUG_MODE = True
     GlobalConfig.USE_FAKE_REDIS = False
 
-    from event_processor import EventProcessorInterface
-
     EventProcessorInterface().run_event_listener()
 
-    # suggestions = Suggestions()
-    # suggestions.generate_jokes(
-    #     "!cmUhTOOmdBzQRDPHUw:matrix.localhost.me",
-    #     until_message_event_id="$yFTdOimYAahaU_CqOKstKbQyVza8Z3QV24CgtG-gRBo",
-    # )
-
-import asyncio
 
 commands = [
     "python -c 'from event_processor import EventProcessorInterface; EventProcessorInterface().run_event_listener();'",
