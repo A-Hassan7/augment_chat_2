@@ -45,6 +45,8 @@ class Suggestions:
         # send the prompt to the llm queue
         job = self.llm.enqueue_completion_request(
             formatted_prompt,
+            request_reference_type="most_recent_message_event_id",
+            request_reference=most_recent_message_event_id,
             on_success=self.process_suggestion_on_success,
             on_failure=self.report_failure,
             meta={
@@ -53,6 +55,8 @@ class Suggestions:
                 "suggestion_type": suggestion_type,
                 "input_prompt": formatted_prompt,
                 "prompt_class": prompt,
+                "request_reference_type": "most_recent_message_event_id",
+                "request_reference": most_recent_message_event_id,
             },
         )
         self.logger.info(
@@ -84,15 +88,14 @@ class Suggestions:
         prompt_class = job.meta["prompt_class"]
         parsed_suggestions = prompt_class.parse_response(result)
 
-        llm_request_id = 0  # TODO: figure out how to get the request id from the llm
-
         #### TODO: JOKES DON'T SEEM FUNNY TRY INSERTING THE INPUT PROMPT INTO CHATGPT AND OPTIMISE
         # insert suggestion into the database
         suggestions_object = models.Suggestions(
             room_id=job.meta["room_id"],
             most_recent_message_event_id=job.meta["most_recent_message_event_id"],
             input_prompt=job.meta["input_prompt"],
-            llm_request_id=llm_request_id,
+            llm_request_reference=job.meta["request_reference"],
+            llm_request_reference_type=job.meta["request_reference_type"],
             suggestion_type=job.meta["suggestion_type"],
             suggestions=parsed_suggestions,
         )

@@ -12,33 +12,58 @@ class LLMQueue:
 
         self.llm = LLM()
 
-    def enqueue_embedding_request(self, text, on_success, meta):
+    def enqueue_embedding_request(
+        self,
+        text,
+        request_reference_type: str,
+        request_reference: str,
+        on_success,
+        meta,
+    ):
         """
-        Create en embedding task
+        Create an embedding task
 
         Args:
-            text (str): text to embedd
+            text (str): text to embed
             on_success (func): function to execute when the job is completed
         """
         return self.llm_queue.enqueue(
             self.llm.create_embedding,
-            kwargs={"text": text},
+            kwargs={
+                "text": text,
+                "request_reference_type": request_reference_type,
+                "request_reference": request_reference,
+            },
             on_success=on_success,
             meta=meta,
         )
 
-    def enqueue_completion_request(self, prompt, on_success, meta, **kwargs):
+    def enqueue_completion_request(
+        self,
+        prompt,
+        request_reference_type: str,
+        request_reference: str,
+        on_success,
+        meta,
+        **kwargs
+    ):
         """
-        Create completion task
+        Create a completion task
 
         Args:
             prompt (str): the prompt
+            request_reference_type (str): type of the request reference
+            request_reference (str): the request reference
             on_success (func): function to execute on success
             meta (dict): metadata to add to the job
         """
         return self.llm_queue.enqueue(
             self.llm.create_completion,
-            kwargs={"prompt": prompt},
+            kwargs={
+                "prompt": prompt,
+                "request_reference_type": request_reference_type,
+                "request_reference": request_reference,
+            },
             on_success=on_success,
             meta=meta,
             **kwargs,

@@ -21,6 +21,7 @@ class Suggestions(Base, TimestampMixin):
     room_id = Column(Text, nullable=False)
     most_recent_message_event_id = Column(Text, nullable=False)
     input_prompt = Column(Text, nullable=False)
-    llm_request_id = Column(Integer, nullable=False)
+    llm_request_reference = Column(Text, nullable=False)
+    llm_request_reference_type = Column(Text, nullable=False)
     suggestion_type = Column(Text, nullable=False)
     suggestions = Column(ARRAY(Text), nullable=False)

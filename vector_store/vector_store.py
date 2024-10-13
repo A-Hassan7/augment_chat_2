@@ -333,6 +333,8 @@ class VectorStore:
             # send request to llm
             llm.enqueue_embedding_request(
                 text=chunk.document,
+                request_reference_type="transcript_chunk_id",
+                request_reference=chunk.id,
                 on_success=insert_embedding_on_success,
                 meta={"transcript_chunk.id": chunk.id},
             )
