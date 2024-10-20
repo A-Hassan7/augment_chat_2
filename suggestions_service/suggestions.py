@@ -63,6 +63,8 @@ class Suggestions:
             f"Joke prompt completion request enqueued for room id: {room_id} and job id: {job.id}"
         )
 
+        return job
+
     @staticmethod
     def process_suggestion_on_success(job, connection, result, *args, **kawargs):
         """
