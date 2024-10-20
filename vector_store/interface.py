@@ -1,5 +1,6 @@
 from .database.repositories import TranscriptsRepository
 from .vector_store_queue import VectorStoreQueue
+from .backfiller import backfill_transcripts
 
 
 class VectorStoreInterface:
@@ -24,3 +25,6 @@ class VectorStoreInterface:
         return self.transcripts_repository.get_by_room_id(
             room_id, order_by_timestamp_asc, limit, until_message_event_id
         )
+
+    def backfill_room(self, room_id):
+        backfill_transcripts(room_id)
