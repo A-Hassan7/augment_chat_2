@@ -29,10 +29,14 @@ class SuggestionsRepository(BaseRepository):
             session.add(suggestions)
             session.commit()
 
-    def get_by_room_id(self, room_id: str):
+    def get_by_room_id(self, room_id: str, most_recent: bool = False):
         with self.Session() as session:
             # order transcripts by timestamp in specified order
             statement = select(self.model).where(self.model.room_id == room_id)
+
+            if most_recent:
+                statement = statement.order_by(self.model.created_at.desc()).limit(1)
+
             return session.execute(statement).scalars().all()
 
     def delete_by_room_id(self, room_id: str):
