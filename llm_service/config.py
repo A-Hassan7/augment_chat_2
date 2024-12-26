@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv("llm_service/.env.llm_service")
+load_dotenv(".env")
 
 
 class OpenAIConfig:

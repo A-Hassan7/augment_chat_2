@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv("queue_controller/.env.queue_controller")
+load_dotenv(".env")
 
 
 class RedisConfig:

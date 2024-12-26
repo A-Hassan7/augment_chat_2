@@ -2,12 +2,13 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv('bridge_manager/.env.bridge_manager')
+load_dotenv(".env")
+
 
 class DatabaseConfig:
 
-    DRIVERNAME = os.environ.get('DRIVERNAME')
-    HOST = os.environ.get('HOST')
-    PORT = os.environ.get('PORT')
-    USERNAME = os.environ.get('USERNAME')
-    PASSWORD = os.environ.get('PASSWORD')
+    DRIVERNAME = os.environ.get("DRIVERNAME")
+    HOST = os.environ.get("HOST")
+    PORT = os.environ.get("PORT")
+    USERNAME = os.environ.get("USERNAME")
+    PASSWORD = os.environ.get("PASSWORD")

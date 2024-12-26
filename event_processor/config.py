@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv("event_processor/.env.event_processor")
+load_dotenv(".env")
 
 
 class DatabaseConfig:

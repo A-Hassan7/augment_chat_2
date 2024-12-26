@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv("vector_store/.env.vector_store")
+load_dotenv(".env")
 
 
 class DatabaseConfig:
