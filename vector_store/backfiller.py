@@ -24,6 +24,11 @@ def backfill_transcripts(room_ids: list = None, all_rooms: bool = False):
     """
     # log
 
+    if not isinstance(room_ids, list):
+        raise ValueError(
+            f"room_ids must be passed as a list received instance of {type(room_ids)}"
+        )
+
     if not room_ids and not all_rooms:
         raise ValueError(
             "Either room_ids should be provided or all_rooms must be set to True."
