@@ -101,7 +101,6 @@ class WhatsappBridgeClient:
         if not self.get_registration_details(mx_username):
             await self.register(mx_username)
 
-
         # check if the user is already logged in
         if await self.is_user_logged_in(mx_username):
             raise UserAlreadyLoggedIn(
@@ -227,6 +226,8 @@ class WhatsappBridgeClient:
         """
         Select a bridge bot to allocate a new user to. In future this may be based on an allocation
         strategy that distributes the load between multiple bots evenly
+
+        This will need to create a new bridge bot for each new user.
         """
         return random.choice(self.bridge_bots)
 
