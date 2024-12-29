@@ -128,13 +128,16 @@ class VectorStore:
         # inserts new chunks into the database if there are enough messages
         self.update_room(room_id)
 
-    def initialise_room(self, room_id):
+    @staticmethod
+    def initialise_room(room_id):
 
         # check if existing chunks have been created
         # if not then this is a fresh room to create chunks for
         # in which case I need to check if I've received the oldest backfilled messages
         # and that there are enough transcripts to create a chunk
         # then create the chunks using all transcripts
+
+        self = VectorStore()
 
         # get the existing number of transcript chunks
         # if there are existing chunks then the room has already been initialised so exit
@@ -149,7 +152,7 @@ class VectorStore:
             # then none of the messages will trigger this
             # I need this to trigger after all the messages have been received
             # TODO: test
-            from vector_store_queue import VectorStoreQueue
+            from .vector_store_queue import VectorStoreQueue
 
             self.logger.info(
                 f"I hasn't been long enough since the oldest message was received to create transcript chunk for room id: {room_id}"

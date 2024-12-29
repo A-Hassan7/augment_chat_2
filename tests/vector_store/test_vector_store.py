@@ -3,6 +3,7 @@
 # update room
 
 from datetime import datetime
+import time
 
 import pytest
 
@@ -48,9 +49,12 @@ def test_process_message(parsed_messages):
     transcript_chunks_repository.delete_by_room_id(TEST_ROOM_ID)
 
     # process messages
-    for message in parsed_messages:
+    for i, message in enumerate(parsed_messages):
 
         vector_store.process_message(message)
+
+        if i == 0:
+            time.sleep(vector_store.OLDEST_ROOM_MESSAGE_WAIT_TIME_SECONDS)
 
         # check a transcript gets created and inserted into the transcripts table
         transcript = transcript_repository.get_by_event_id(message.event_id)
