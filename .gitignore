@@ -4,6 +4,8 @@
 testing/
 .vscode
 
+logs.txt
+
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
