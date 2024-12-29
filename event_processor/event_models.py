@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ValidationError
 
 from .errors import NoContentInRoomMessageEvent, UnsupportedMessageContentType
@@ -41,30 +42,43 @@ class RoomMessageEvent(BaseEvent):
         return content_model(**content)
 
 
+class InReplyTo(BaseModel):
+    event_id: str
+
+
+class RelatesTo(BaseModel):
+    in_reply_to: Optional[InReplyTo] = Field(default=None, alias="m.in_reply_to")
+
+
 # different types of contents
 class TextMessageContent(BaseModel):
     body: str
     msgtype: str
+    relates_to: Optional[RelatesTo] = Field(default=None, alias="m.relates_to")
 
 
 class AudioMessageContent(BaseModel):
     url: str
     body: str
     msgtype: str
+    relates_to: Optional[RelatesTo] = Field(default=None, alias="m.relates_to")
 
 
 class ImageMessageContent(BaseModel):
     url: str
     body: str
     msgtype: str
+    relates_to: Optional[RelatesTo] = Field(default=None, alias="m.relates_to")
 
 
 class NoticeMessageContent(BaseModel):
     body: str
     msgtype: str
+    relates_to: Optional[RelatesTo] = Field(default=None, alias="m.relates_to")
 
 
 class VideoMessageContent(BaseModel):
     url: str
     body: str
     msgtype: str
+    relates_to: Optional[RelatesTo] = Field(default=None, alias="m.relates_to")

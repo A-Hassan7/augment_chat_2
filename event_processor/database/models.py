@@ -25,6 +25,7 @@ class ParsedMessage(Base, TimestampMixin):
     message_type = Column(Text, nullable=False)
     sender = Column(Text, nullable=False)
     body = Column(Text)
+    in_reply_to_event_id = Column(Text)
     resource_url = Column(Text)
     depth = Column(Integer)
 

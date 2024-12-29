@@ -25,5 +25,8 @@ class EventProcessorInterface:
     def get_parsed_messages(self, room_id):
         return self.parsed_messages_repository.get_by_room_id(room_id)
 
+    def get_parsed_message_by_event_id(self, event_id):
+        return self.parsed_messages_repository.get_by_event_id(event_id)
+
     def get_all_room_ids(self):
         return self.parsed_messages_repository.get_unique_room_ids()

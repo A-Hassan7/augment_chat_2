@@ -23,9 +23,11 @@ class Transcript(Base, TimestampMixin):
     event_id = Column(Text, nullable=False, primary_key=True)
     room_id = Column(Text, nullable=False)
     sender_matrix_user_id = Column(Text, nullable=False)
+    sender_matrix_display_name = Column(Text, nullable=False)
     message_timestamp = Column(DateTime, nullable=False)
     depth = Column(Integer)
     transcript = Column(Text, nullable=False)
+    body = Column(Text, nullable=False)
 
 
 class TranscriptChunk(Base, TimestampMixin):

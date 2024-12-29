@@ -94,6 +94,11 @@ class EventProcessor:
         origin_server_ts_seconds = event.origin_server_ts / 1000
         message_timestamp = datetime.fromtimestamp(origin_server_ts_seconds)
 
+        try:
+            in_reply_to_event_id = event.content.relates_to.in_reply_to.event_id
+        except AttributeError:
+            in_reply_to_event_id = None
+
         # create orm model
         parsed_message = ParsedMessage(
             event_id=event.event_id,
@@ -103,6 +108,7 @@ class EventProcessor:
             message_type=event.content.msgtype,
             sender=event.sender,
             body=event.content.body,
+            in_reply_to_event_id=in_reply_to_event_id,
             resource_url=resource_url,
             depth=event.depth,
         )
