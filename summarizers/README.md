@@ -1,0 +1,11 @@
+- create summaries of rooms
+- general room summary
+- person specific summary
+  - quirks
+  - insult material
+  - inside jokes
+- what's the goal?
+- these summaries are supposed to inform the main prompt which creates joke suggestions
+- perhaps start with the joke suggestion prompt first then
+- create a simple prompt, workout what summaries/info it'll require, then work backwards from there
+- 
