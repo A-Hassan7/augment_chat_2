@@ -8,7 +8,19 @@ services:
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
-      - POSTGRES_DB=augment_chat
+      - POSTGRES_DB=augment_chat  
+      
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: redis
+    restart: always
+    ports:
+      - 6379:6379
+      - 8001:8001
+    command: redis-server --requirepass password
+    volumes:
+      - redis:/data
 
 volumes:
   augment_chat_database:
+  redis:
