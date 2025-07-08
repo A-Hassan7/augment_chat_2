@@ -37,6 +37,11 @@ class UsersRepository(BaseRepository):
             statement = select(self.model).where(self.model.id == user_id)
             return session.execute(statement).scalar()
 
+    def get_by_username(self, username: str):
+        with self.Session() as session:
+            statement = select(self.model).where(self.model.username == username)
+            return session.execute(statement).scalar()
+
     def create(self, user: User):
         with self.Session() as session:
             session.add(user)
