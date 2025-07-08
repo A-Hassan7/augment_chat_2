@@ -8,7 +8,7 @@ from matrix_service.database.repositories import AccessTokensRepository
 
 class MatrixUser:
 
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, password: None | str = None):
         """
         Initialise an instance of the user using the full user_id including the matrix homserver name
 
@@ -17,6 +17,7 @@ class MatrixUser:
         """
 
         self.user_id = user_id
+        self.password = password
 
     @property
     def access_token(self):

@@ -67,7 +67,10 @@ class MatrixClient:
             raise RegistrationError(message)
 
         self.logger.info(f"User {username} successfully registered")
-        return MatrixUser(username)
+
+        self.logger.info(f"password: {random_password}")
+
+        return MatrixUser(username, password=random_password)
 
     async def login(self, username: str) -> MatrixUser:
         """

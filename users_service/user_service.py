@@ -19,6 +19,9 @@ class UsersService:
         user = User(username=username)
         self.users_repository.create(user)
 
+        user = self.users_repository.get_by_username(username)
+        return user.id
+
     def register_with_matrix(self, user_id):
         """
         Register a user with the matrix server and add the matrix id to the users table.
@@ -36,10 +39,14 @@ class UsersService:
 
         # register with matrix service using random username
         random_username = str(uuid.uuid4())
-        matrix_username = asyncio.run(self.matrix.register_user(random_username))
+        matrix_user = asyncio.run(self.matrix.register_user(random_username))
 
         # insert matrix user id into the users table
-        self.users_repository.update(user_id, matrix_username=matrix_username)
+        self.users_repository.update(
+            user_id,
+            matrix_username=matrix_user.user_id,
+            matrix_password=matrix_user.password,
+        )
 
     def create_whatsapp_bridge(self, user_id, phone_number):
         """
@@ -59,7 +66,7 @@ class UsersService:
         try:
             self.bridge_manager.whatsapp_register_user(matrix_username)
         except Exception as e:
-            if e.__class__.__name__ == 'BridgeUserRegistrationAlreadyExists':
+            if e.__class__.__name__ == "BridgeUserRegistrationAlreadyExists":
                 pass
             else:
                 print(e)

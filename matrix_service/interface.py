@@ -3,6 +3,7 @@
 
 from matrix_service.matrix_client import MatrixClient
 
+
 class MatrixServiceInterface:
 
     def __init__(self):
@@ -10,7 +11,7 @@ class MatrixServiceInterface:
 
     async def register_user(self, username):
         user = await self.matrix_client.register_user(username)
-        return user.user_id
+        return user
 
     async def create_room(self, username, room_name, is_direct, invite_usernames):
         room_id = await self.matrix_client.create_room(
@@ -26,14 +27,12 @@ class MatrixServiceInterface:
             mx_username=matrix_username,
             room_id=room_id,
             after_event_id=after_event_id,
-            limit=limit
+            limit=limit,
         )
         return messages
 
     async def send_message(self, username, room_id, message_body):
         event_id = await self.matrix_client.send_message(
-            username=username,
-            room_id=room_id,
-            message_body=message_body
+            username=username, room_id=room_id, message_body=message_body
         )
         return event_id
