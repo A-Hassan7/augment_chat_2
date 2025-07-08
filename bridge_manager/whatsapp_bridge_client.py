@@ -109,18 +109,20 @@ class WhatsappBridgeClient:
 
         # send login message
         message_event_id = await self.message_bot(
-            mx_username=mx_username, message_body=f"login {phone_number}"
+            mx_username=mx_username, message_body=f"login phone {phone_number}"
         )
 
         # wait for 1 second to give the bridge bot to respond to the message
-        time.sleep(1)
+        time.sleep(5)
 
         # get response
         message_responses = self.get_response_to_message(
             mx_username=mx_username, event_id=message_event_id
         )
 
-        login_code_pattern = "Scan the code below or enter the following code on your phone to log in: ([A-Za-z0-9]+-[A-Za-z0-9]+)"
+        # Regex to match codes like 98HG-9QC3 (alphanumeric, 4 chars, dash, 4 chars)
+        login_code_pattern = "`([A-Z0-9]{4}-[A-Z0-9]{4})`"
+
         for response in message_responses:
             # Scan the code below or enter the following code on your phone to log in: **98HG-9QC3**
             # responses come back with '*' around the code, so I need to remove them first
