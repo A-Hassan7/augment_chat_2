@@ -19,8 +19,10 @@ if debug:
 
 commands = [
     "python -c 'from event_processor import EventProcessorInterface; EventProcessorInterface().run_event_listener();'",
+    "python -c 'from event_processor import EventProcessorInterface; EventProcessorInterface().backfill();'",
     "python -c 'from event_processor import EventProcessorInterface; EventProcessorInterface().run_event_processor_worker();'",
     "python -c 'from vector_store import VectorStoreInterface; VectorStoreInterface().run_worker();'",
+    "python -c 'from vector_store import VectorStoreInterface; VectorStoreInterface().backfill();'",
     "python -c 'from llm_service import LLMInterface; LLMInterface().run_worker();'",
 ]
 

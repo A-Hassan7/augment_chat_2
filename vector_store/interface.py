@@ -26,5 +26,5 @@ class VectorStoreInterface:
             room_id, order_by_timestamp_asc, limit, until_message_event_id
         )
 
-    def backfill_room(self, room_ids: list):
-        backfill_transcripts(room_ids)
+    def backfill(self, room_ids: list, all_rooms: bool):
+        backfill_transcripts(room_ids, all_rooms)
