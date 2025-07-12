@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector:pg17 
+    image: pgvector/pgvector:pg17
     container_name: augment_chat_database
     ports:
       - 5400:5432
