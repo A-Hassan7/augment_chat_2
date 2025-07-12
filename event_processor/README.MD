@@ -29,9 +29,9 @@ CREATE PUBLICATION event_json_pub
 3. Create subscription
 ```sql
 CREATE SUBSCRIPTION event_json_sub
-    CONNECTION 'host=host.docker.internal port=5432 user=synapse dbname=synapse'
-    PUBLICATION event_json_pub
-    WITH (connect = true, enabled = true, create_slot = false, slot_name = test, synchronous_commit = 'off', binary = false, streaming = 'False', two_phase = false, disable_on_error = false, run_as_owner = false, password_required = true, origin = 'any');
+CONNECTION 'host=<synapse-db-ip> port=5432 user=matrix dbname=synapse connect_timeout=10 password=password sslmode=prefer'
+PUBLICATION event_json_pub
+WITH (connect = true, enabled = true, copy_data = true, create_slot = true, synchronous_commit = 'off', binary = false, streaming = 'False', two_phase = false, disable_on_error = false, run_as_owner = false, password_required = true, origin = 'any');
 ```
 
 4. Replication requires both databases to have the same fully qualified table names. Therefore I need to create the exact same schema and table in the augment chat database as in the synapse database.
