@@ -1,10 +1,18 @@
 from sqlalchemy import Column, Integer, Text, DateTime, func
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
+
+from .engine import DatabaseEngine
+
+SCHEMA_NAME = "event_processor"
+
+with DatabaseEngine().connect() as conn:
+    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
 
 
 #### EVENT PROCESSOR TABLES
 class Base(DeclarativeBase):
-    __table_args__ = {"schema": "event_processor"}
+    __table_args__ = {"schema": SCHEMA_NAME}
 
 
 # add timestamp columns to model

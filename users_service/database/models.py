@@ -1,9 +1,15 @@
-from sqlalchemy import Column, Integer, Text
+from sqlalchemy import Column, Integer, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped
+from .engine import DatabaseEngine
+
+SCHEMA_NAME = "users_service"
+
+with DatabaseEngine().connect() as conn:
+    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
 
 
 class Base(DeclarativeBase):
-    __table_args__ = {"schema": "users_service"}
+    __table_args__ = {"schema": SCHEMA_NAME}
 
 
 class User(Base):

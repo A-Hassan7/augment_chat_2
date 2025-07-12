@@ -1,9 +1,15 @@
-from sqlalchemy import Column, Integer, Text, DateTime, func, ARRAY
+from sqlalchemy import Column, Integer, Text, DateTime, func, ARRAY, text
 from sqlalchemy.orm import DeclarativeBase
+from .engine import DatabaseEngine
+
+SCHEMA_NAME = "suggestions"
+
+with DatabaseEngine().connect() as conn:
+    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
 
 
 class Base(DeclarativeBase):
-    __table_args__ = {"schema": "suggestions"}
+    __table_args__ = {"schema": SCHEMA_NAME}
 
 
 # add timestamp columns to model
