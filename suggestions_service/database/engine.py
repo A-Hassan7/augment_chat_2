@@ -21,6 +21,7 @@ class DatabaseEngine:
                     port=DatabaseConfig.PORT,
                     username=DatabaseConfig.USERNAME,
                     password=DatabaseConfig.PASSWORD,
+                    database=DatabaseConfig.DATABASE,
                 )
             )
 

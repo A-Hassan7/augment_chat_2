@@ -12,6 +12,7 @@ class DatabaseConfig:
     PORT = os.environ.get("PORT")
     USERNAME = os.environ.get("USERNAME")
     PASSWORD = os.environ.get("PASSWORD")
+    DATABASE = os.environ.get("DATABASE")
 
 
 class EventListenerConfig:
