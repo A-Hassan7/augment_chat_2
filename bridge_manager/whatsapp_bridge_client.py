@@ -22,6 +22,7 @@ from .errors import (
     LoginFailed,
 )
 from matrix_service.interface import MatrixServiceInterface
+from .config import BridgeManagerConfig
 
 
 class BaseBridgeClient:
@@ -30,17 +31,19 @@ class BaseBridgeClient:
 
 class WhatsappBridgeClient:
 
-    SERVICE_NAME = "whatsapp_bridge"
+    SERVICE_NAME = "whatsapp"
+    BOT_USERNAME = "whatsappbot"
     BOT_MESSAGE_PREFIX = "!wa"
 
     def __init__(self):
         self.matrix_service = MatrixServiceInterface()
+        self.bridge_bots_repository = BridgeBotsRepository()
 
         # raise error if no bridge bots are found
-        if not self.bridge_bots:
-            raise NoBridgeBotsFound(
-                f"No bridge bots found for service {self.SERVICE_NAME}"
-            )
+        # if not self.bridge_bots:
+        #     raise NoBridgeBotsFound(
+        #         f"No bridge bots found for service {self.SERVICE_NAME}"
+        #     )
 
     async def register(self, mx_username: str):
         """
@@ -54,31 +57,33 @@ class WhatsappBridgeClient:
         """
 
         # check if a registration already exists
-        existing_registration = self.get_registration_details(mx_username)
-        if existing_registration:
+        bridge_bot = self.bridge_bots_repository.get_by_matrix_username_and_service(
+            owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
+        )
+
+        if bridge_bot:
             raise BridgeUserRegistrationAlreadyExists(
                 f"User {mx_username} is already registered with this bridge service {self.SERVICE_NAME}. "
-                f"The registered bridge management room is {existing_registration.bridge_management_room_id}"
+                f"The registered bridge management room is {bridge_bot.bridge_management_room_id}"
             )
 
+        # TODO: test that this works
+
         # get a bridge bot to register this user to
-        allocated_bridge_bot = self._select_bridge_bot_to_register_new_user()
+        bridge_bot = self._create_bridge(mx_username)
 
         # create room
+        # @_bridge_manager__whatsapp_1__whatsappbot
+        room_name = f"@{BridgeManagerConfig.NAMESPACE}{bridge_bot.bridge_service}_{bridge_bot.id}"
+
         room_id = await self.matrix_service.create_room(
             username=mx_username,
-            room_name="whatsapp_bridge_management_room",
+            room_name=room_name,
             is_direct=True,
-            invite_usernames=[allocated_bridge_bot.matrix_bot_username],
+            invite_usernames=[bridge_bot.matrix_bot_username],
         )
 
-        # create registration in the database manager databse using the room_id
-        bridge_user_registration_repository = BridgeUserRegistrationsRepository()
-        bridge_user_registration_repository.create(
-            bridge_bot_id=allocated_bridge_bot.id,
-            matrix_username=mx_username,
-            bridge_management_room_id=room_id,
-        )
+        bridge_bot.update(bridge_bot.id, bridge_management_room_id=room_id)
 
     async def login(self, mx_username: str, phone_number: str) -> str:
         """
@@ -98,7 +103,11 @@ class WhatsappBridgeClient:
         """
 
         # register user with the bridge if it's not currently registered
-        if not self.get_registration_details(mx_username):
+        # check if a registration already exists
+        bridge_bot = self.bridge_bots_repository.get_by_matrix_username_and_service(
+            owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
+        )
+        if not bridge_bot:
             await self.register(mx_username)
 
         # check if the user is already logged in
@@ -198,20 +207,16 @@ class WhatsappBridgeClient:
 
         Args:
             mx_username (str): _description_
-        """
-        bridge_user_registrations_repository = BridgeUserRegistrationsRepository()
 
-        bot_ids = [int(bot.id) for bot in self.bridge_bots]
-        user_registration = (
-            bridge_user_registrations_repository.get_by_matrix_username_and_bot_ids(
-                matrix_username=mx_username, bot_ids=bot_ids
-            )
+        """
+
+        bridge_bots_repository = BridgeBotsRepository()
+
+        bridge_bot = bridge_bots_repository.get_by_matrix_username_and_service(
+            owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
         )
 
-        if not user_registration:
-            return
-
-        return user_registration
+        return bridge_bot
 
     @property
     def bridge_bots(self):
@@ -224,14 +229,35 @@ class WhatsappBridgeClient:
 
         return bridge_bots
 
-    def _select_bridge_bot_to_register_new_user(self):
+    def _create_bridge(self, mx_username):
         """
-        Select a bridge bot to allocate a new user to. In future this may be based on an allocation
-        strategy that distributes the load between multiple bots evenly
+        Create a new bridge for the matrix user
+        """
 
-        This will need to create a new bridge bot for each new user.
-        """
-        return random.choice(self.bridge_bots)
+        # TODO: implement
+        # this needs to actually spin up a bridge
+
+        # for now I'm just adding a hard coded registration
+        bridge_bots_repo = BridgeBotsRepository()
+
+        bridge = bridge_bots_repo.create(
+            bridge_service="whatsapp",
+            as_token="oR0nqy2geKRStdUNtNNiqTzpQdV4jPB21dCEMSUHZBVUOuCKTwBzE5R09l311lzA",
+            hs_token="BlY6FQwruaK9KyfYBY6ChH8MOSmNS2xhEhNBRSXBzJLj92FWpMKvU2BpjXFmLDyT",
+            ip="127.0.0.1",
+            port="29319",
+            owner_matrix_username=mx_username,
+        )
+
+        # _bridge_manager__whatsapp_1__whatsappbot
+
+        # TODO: need to add the homeserver name
+        matrix_bot_username = f"@{BridgeManagerConfig.NAMESPACE}{self.SERVICE_NAME}_{bridge.id}__{self.BOT_USERNAME}"
+        bridge = bridge_bots_repo.update(
+            bridge.id, matrix_bot_username=matrix_bot_username
+        )
+
+        return bridge
 
     async def is_user_logged_in(self, mx_username) -> bool:
         # get the current status of the connection to whatsapp through the bridge bot

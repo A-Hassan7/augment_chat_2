@@ -11,13 +11,42 @@ Base.metadata.create_all(DatabaseEngine())
 
 
 class BaseRepository(ABC):
+    def __init__(self, session_factory=None):
+        # Allow dependency injection for easier testing
+        self.Session = session_factory or sessionmaker(bind=DatabaseEngine())
 
-    def __init__(self):
-        self.Session = sessionmaker(bind=DatabaseEngine())
+    @property
+    @abstractmethod
+    def model(self):
+        # Force subclasses to define the model
+        pass
 
     @abstractmethod
     def get_all(self):
         pass
+
+    def create(self, **kwargs):
+        with self.Session() as session:
+            obj = self.model(**kwargs)
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+            return obj
+
+    def get_by_id(self, id_):
+        with self.Session() as session:
+            return session.get(self.model, id_)
+
+    def update(self, id_, **kwargs):
+        with self.Session() as session:
+            obj = session.get(self.model, id_)
+            if not obj:
+                return None
+            for key, value in kwargs.items():
+                setattr(obj, key, value)
+            session.commit()
+            session.refresh(obj)
+            return obj
 
 
 class BridgeBotsRepository(BaseRepository):
@@ -35,6 +64,23 @@ class BridgeBotsRepository(BaseRepository):
                 self.model.bridge_service == bridge_service
             )
             return session.execute(statement).scalars().all()
+
+    def get_by_as_token(self, as_token: str):
+        with self.Session() as session:
+            statement = select(self.model).where(self.model.as_token == as_token)
+            return session.execute(statement).scalar_one_or_none()
+
+    def get_by_matrix_username_and_service(
+        self, owner_matrix_username: str, bridge_service: str
+    ):
+        with self.Session() as session:
+            statement = select(self.model).where(
+                and_(
+                    self.model.owner_matrix_username == owner_matrix_username,
+                    self.model.bridge_service == bridge_service,
+                )
+            )
+            return session.execute(statement).scalar_one_or_none()
 
 
 class BridgeUserRegistrationsRepository(BaseRepository):
