@@ -25,9 +25,11 @@ commands = [
     "python -c 'from event_processor import EventProcessorInterface; EventProcessorInterface().run_event_processor_worker();'",
     # Vectorstore processes
     "python -c 'from vector_store import VectorStoreInterface; VectorStoreInterface().run_worker();'",
-    "python -c 'from vector_store import VectorStoreInterface; VectorStoreInterface().backfill();'",
+    "python -c 'from vector_store import VectorStoreInterface; VectorStoreInterface().backfill(all_rooms=True);'",
     # LLM service processes
     "python -c 'from llm_service import LLMInterface; LLMInterface().run_worker();'",
+    # Bridge manager
+    "python -c \"import uvicorn; uvicorn.run('api.main:app')\"",
 ]
 
 
