@@ -9,6 +9,7 @@ SCHEMA_NAME = "vector_store"
 
 with DatabaseEngine().connect() as conn:
     conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
+    conn.commit()
 
 
 class Base(DeclarativeBase):

@@ -8,6 +8,7 @@ SCHEMA_NAME = "event_processor"
 
 with DatabaseEngine().connect() as conn:
     conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
+    conn.commit()
 
 
 #### EVENT PROCESSOR TABLES

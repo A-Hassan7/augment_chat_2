@@ -2,6 +2,16 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey
 from datetime import datetime
 from sqlalchemy import func
+from sqlalchemy import Boolean, LargeBinary, JSON, String, Index, text
+import uuid
+
+from .engine import DatabaseEngine
+
+SCHEMA_NAME = "bridge_manager"
+
+with DatabaseEngine().connect() as conn:
+    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
+    conn.commit()
 
 
 class Base(DeclarativeBase):
@@ -34,3 +44,17 @@ class BridgeUserRegistrations(Base):
     bridge_bot_id = Column(Integer, ForeignKey("bridge_manager.bridge_bots.id"))
     matrix_username = Column(Text, nullable=False)
     bridge_management_room_id = Column(Text, nullable=False, unique=True)
+
+
+class TransactionMappings(Base):
+    __tablename__ = "transaction_mappings"
+    __table_args__ = (
+        Index("idx_transaction_mappings_transaction_id", "transaction_id"),
+        {"schema": "bridge_manager"},
+    )
+
+    # unique transaction identifier (no longer a primary key to avoid composite PK with Base.id)
+    transaction_id = Column(Text, nullable=False, unique=True)
+    bridge_as_token = Column(Text, nullable=True)
+    bridge_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
