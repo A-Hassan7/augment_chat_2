@@ -5,6 +5,7 @@ testing/
 .vscode
 
 logs.txt
+**/.DS_Store
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
