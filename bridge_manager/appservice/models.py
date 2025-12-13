@@ -150,6 +150,7 @@ class RequestContext:
             bridge_id=self.bridge.bridge_id,
             homeserver_id=self.homeserver.id,
             method=self.request.method,
+            path=self.request.path_params.get("path", ""),
             inbound_request=data,
         )
 

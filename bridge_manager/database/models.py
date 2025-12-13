@@ -64,6 +64,7 @@ class Request(Base):
     homeserver_id = Column(Integer, ForeignKey("bridge_manager.homeservers.id"))
 
     method = Column(Text, nullable=False)
+    path = Column(Text, nullable=False)
 
     inbound_request = Column(JSON, nullable=False)
     outbound_request = Column(JSON, nullable=True)
