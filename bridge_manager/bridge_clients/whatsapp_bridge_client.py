@@ -10,12 +10,12 @@ import random
 import time
 import re
 
-from .database.repositories import (
-    BridgeBotsRepository,
-    BridgeUserRegistrationsRepository,
+from bridge_manager.database.repositories import (
+    BridgesRepository,
+    # BridgeUserRegistrationsRepository,
 )
 from .errors import (
-    NoBridgeBotsFound,
+    NoBridgesFound,
     BridgeUserRegistrationAlreadyExists,
     NoBridgeUserRegistrationFound,
     UserAlreadyLoggedIn,
@@ -37,11 +37,11 @@ class WhatsappBridgeClient:
 
     def __init__(self):
         self.matrix_service = MatrixServiceInterface()
-        self.bridge_bots_repository = BridgeBotsRepository()
+        self.bridges_repository = BridgesRepository()
 
-        # raise error if no bridge bots are found
-        # if not self.bridge_bots:
-        #     raise NoBridgeBotsFound(
+        # raise error if no bridge is found
+        # if not self.bridges:
+        #     raise NoBridgesFound(
         #         f"No bridge bots found for service {self.SERVICE_NAME}"
         #     )
 
@@ -57,33 +57,35 @@ class WhatsappBridgeClient:
         """
 
         # check if a registration already exists
-        bridge_bot = self.bridge_bots_repository.get_by_matrix_username_and_service(
+        bridge = self.bridges_repository.get_by_matrix_username_and_service(
             owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
         )
 
-        if bridge_bot:
+        if bridge:
             raise BridgeUserRegistrationAlreadyExists(
                 f"User {mx_username} is already registered with this bridge service {self.SERVICE_NAME}. "
-                f"The registered bridge management room is {bridge_bot.bridge_management_room_id}"
+                f"The registered bridge management room is {bridge.bridge_management_room_id}"
             )
 
         # TODO: test that this works
 
         # get a bridge bot to register this user to
-        bridge_bot = self._create_bridge(mx_username)
+        bridge = self._create_bridge(mx_username)
 
         # create room
         # @_bridge_manager__whatsapp_1__whatsappbot
-        room_name = f"@{BridgeManagerConfig.NAMESPACE}{bridge_bot.bridge_service}_{bridge_bot.id}"
+        room_name = (
+            f"@{BridgeManagerConfig.NAMESPACE}{bridge.bridge_service}_{bridge.id}"
+        )
 
         room_id = await self.matrix_service.create_room(
             username=mx_username,
             room_name=room_name,
             is_direct=True,
-            invite_usernames=[bridge_bot.matrix_bot_username],
+            invite_usernames=[bridge.matrix_bot_username],
         )
 
-        bridge_bot.update(bridge_bot.id, bridge_management_room_id=room_id)
+        bridge.update(bridge.id, bridge_management_room_id=room_id)
 
     async def login(self, mx_username: str, phone_number: str) -> str:
         """
@@ -104,10 +106,10 @@ class WhatsappBridgeClient:
 
         # register user with the bridge if it's not currently registered
         # check if a registration already exists
-        bridge_bot = self.bridge_bots_repository.get_by_matrix_username_and_service(
+        bridge = self.bridges_repository.get_by_matrix_username_and_service(
             owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
         )
-        if not bridge_bot:
+        if not bridge:
             await self.register(mx_username)
 
         # check if the user is already logged in
@@ -210,24 +212,21 @@ class WhatsappBridgeClient:
 
         """
 
-        bridge_bots_repository = BridgeBotsRepository()
-
-        bridge_bot = bridge_bots_repository.get_by_matrix_username_and_service(
+        bridge = self.bridges_repository.get_by_matrix_username_and_service(
             owner_matrix_username=mx_username, bridge_service=self.SERVICE_NAME
         )
 
-        return bridge_bot
+        return bridge
 
     @property
-    def bridge_bots(self):
+    def bridges(self):
         """
         Get a list of bridge bots registered with the bridge manager for this service
         """
 
-        bridge_bots_repository = BridgeBotsRepository()
-        bridge_bots = bridge_bots_repository.get_by_bridge_service(self.SERVICE_NAME)
+        bridges = self.bridges_repository.get_by_bridge_service(self.SERVICE_NAME)
 
-        return bridge_bots
+        return bridges
 
     def _create_bridge(self, mx_username):
         """
@@ -238,9 +237,8 @@ class WhatsappBridgeClient:
         # this needs to actually spin up a bridge
 
         # for now I'm just adding a hard coded registration
-        bridge_bots_repo = BridgeBotsRepository()
 
-        bridge = bridge_bots_repo.create(
+        bridge = self.bridges_repository.create(
             bridge_service="whatsapp",
             as_token="oR0nqy2geKRStdUNtNNiqTzpQdV4jPB21dCEMSUHZBVUOuCKTwBzE5R09l311lzA",
             hs_token="BlY6FQwruaK9KyfYBY6ChH8MOSmNS2xhEhNBRSXBzJLj92FWpMKvU2BpjXFmLDyT",
@@ -253,7 +251,7 @@ class WhatsappBridgeClient:
 
         # TODO: need to add the homeserver name
         matrix_bot_username = f"@{BridgeManagerConfig.NAMESPACE}{self.SERVICE_NAME}_{bridge.id}__{self.BOT_USERNAME}"
-        bridge = bridge_bots_repo.update(
+        bridge = self.bridges_repo.update(
             bridge.id, matrix_bot_username=matrix_bot_username
         )
 

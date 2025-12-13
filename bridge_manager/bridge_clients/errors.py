@@ -1,4 +1,4 @@
-class NoBridgeBotsFound(Exception):
+class NoBridgesFound(Exception):
     pass
 
 
@@ -12,6 +12,7 @@ class NoBridgeUserRegistrationFound(Exception):
 
 class UserAlreadyLoggedIn(Exception):
     pass
+
 
 class LoginFailed(Exception):
     pass

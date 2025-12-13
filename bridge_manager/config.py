@@ -12,6 +12,7 @@ class DatabaseConfig:
     PORT = os.environ.get("PORT")
     USERNAME = os.environ.get("USERNAME")
     PASSWORD = os.environ.get("PASSWORD")
+    DATABASE = os.environ.get("DATABASE")
 
 
 class BridgeManagerConfig:
@@ -20,14 +21,10 @@ class BridgeManagerConfig:
     USERNAME = "_bridge_manager"
     NAMESPACE = "_bridge_manager__"
 
-    HS_URL = "http://localhost:8008"
-    HS_NAME = "matrix.localhost.me"
-    HS_TOKEN = "test"
+    PORT = 8080
+    HOST = "0.0.0.0"
+    AS_TOKEN = "as_token_test"
 
     @property
-    def full_username(self):
-        return f"@{self.USERNAME}:{self.HS_NAME}"
-
-
-# TODO: NEEDS TO BE A DB TABLE
-TRANSACTION_ID_TO_BRIDGE_MAPPER = {}
+    def username_regex(self):
+        return rf"@{self.NAMESPACE}(?P<bridge_type>[^_]+)_(?P<bridge_id>[^_]+)__(?P<bridge_username>[^:]+):(?P<homeserver>[^\s/]+)"
