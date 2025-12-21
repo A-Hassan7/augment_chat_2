@@ -1,12 +1,10 @@
 id: "bridge_manager_1"
-url: "http://host.docker.internal:8000/homeserver"
-as_token: "test"
-hs_token: "test"
-sender_localpart: "_bridge_manager" # Will result in @_bridge_manager:example.org
+url: "http://host.docker.internal:8080/homeserver"
+as_token: "as_token_test"
+hs_token: "hs_token_test"
+rate_limited: false
+sender_localpart: "_bridge_manager__" # Will result in @_bridge_manager:example.org
 namespaces:
   users:
     - exclusive: true
-      regex: "@_bridge_manager__*"
-  aliases:
-    - exclusive: true
-      regex: "#_bridge_manager__*"
+      regex: ^@_bridge_manager__.*

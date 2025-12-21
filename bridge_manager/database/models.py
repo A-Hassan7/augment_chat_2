@@ -34,6 +34,9 @@ class Homeserver(Base):
 class Bridges(Base):
     __tablename__ = "bridges"
 
+    orchestrator_id = Column(
+        Text, nullable=False, unique=True
+    )  # UUID assigned by orchestrator
     bridge_service = Column(Text, nullable=False)  # (whatsapp/discord etc.)
     matrix_bot_username = Column(Text, unique=True)
     as_token = Column(Text, nullable=False)
@@ -66,6 +69,9 @@ class Request(Base):
     method = Column(Text, nullable=False)
     path = Column(Text, nullable=False)
 
+    bridge_discovery_method = Column(Text, nullable=True)
+    discovery_error = Column(Text, nullable=True)
+
     inbound_request = Column(JSON, nullable=False)
     outbound_request = Column(JSON, nullable=True)
     response = Column(JSON, nullable=True)
@@ -92,3 +98,16 @@ class TransactionMappings(Base):
     bridge_as_token = Column(Text, nullable=True)
     bridge_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RoomBridgeMapping(Base):
+    __tablename__ = "room_bridge_mappings"
+    __table_args__ = (
+        Index("idx_room_bridge_mappings_room_id", "room_id"),
+        {"schema": "bridge_manager"},
+    )
+
+    room_id = Column(Text, nullable=False, unique=True)  # Matrix room ID
+    bridge_id = Column(Integer, ForeignKey("bridge_manager.bridges.id"), nullable=False)
+    first_seen_at = Column(DateTime, nullable=False, server_default=func.now())
+    last_seen_at = Column(DateTime, nullable=False, server_default=func.now())

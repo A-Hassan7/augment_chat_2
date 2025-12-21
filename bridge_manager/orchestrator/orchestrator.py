@@ -88,6 +88,7 @@ class Whatsapp:
     def initialise(self, homeserver, bridge_port):
 
         self.ID = uuid.uuid4().hex[:8]
+        self.ORCHESTRATOR_ID = self.ID  # Use the same UUID for orchestrator_id
         self.CONTAINER_NAME = f"bridge_manager__wa_{self.ID}"
         self.MATRIX_BOT_USERNAME = (
             f"@_bridge_manager__wa_{self.ID}__whatsappbot:{homeserver.name}"
@@ -107,7 +108,8 @@ class Whatsapp:
         self.PARAMS["appservice_address"] = f"http://whatsapp-brige:{bridge_port}"
         self.PARAMS["appservice_hostname"] = "0.0.0.0"
         self.PARAMS["appservice_port"] = bridge_port
-        self.PARAMS["appservice_id"] = self.ID
+        self.PARAMS["appservice_id"] = f"_bridge_manager__wa_{self.ID}"
+        self.PARAMS["bot_username"] = f"_bridge_manager__wa_{self.ID}__whatsappbot"
 
         self.PARAMS["appservice_as_token"] = self.AS_TOKEN
         self.PARAMS["appservice_hs_token"] = homeserver.hs_token
@@ -167,6 +169,7 @@ class BridgeOrchestrator:
 
         # register the bridge in the database
         bridge_model = self.bridge_registry.register_bridge(
+            orchestrator_id=bridge.ORCHESTRATOR_ID,
             bridge_service=bridge.SERVICE,
             matrix_bot_username=bridge.MATRIX_BOT_USERNAME,
             as_token=bridge.AS_TOKEN,

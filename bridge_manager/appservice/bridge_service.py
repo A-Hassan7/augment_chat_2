@@ -1,7 +1,9 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
+import re
 import json
 import httpx
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import Request, Response
@@ -13,9 +15,13 @@ from ..database.repositories import (
     TransactionMappingsRepository,
     HomeserversRepository,
 )
+from .route_registry import RouteRegistry, RouteNotFoundError
+from .common_handlers import MatrixClientAPIHandlers, AppserviceAPIHandlers
 
 if TYPE_CHECKING:
     from .models import RequestContext
+
+logger = logging.getLogger(__name__)
 
 # the homeserver needs to create a user for each specific service
 # the username will have to be part of the namespace i.e. _bridge_manager__whatsapp_1__
@@ -49,6 +55,10 @@ class BridgeService(ABC):
         self.bridge_id = bridge.id
         self.bridge_url = f"http://{bridge.ip}:{bridge.port}"
 
+        # Initialize route registry
+        self.routes = RouteRegistry(fallback_handler=self.unhandled_endpoint)
+        self.register_routes()
+
     async def send_request(
         self,
         request_ctx,
@@ -67,7 +77,7 @@ class BridgeService(ABC):
 
         async with httpx.AsyncClient() as client:
 
-            response = await client.request(
+            request = client.build_request(
                 method=method,
                 url=url,
                 params=query_params,
@@ -77,7 +87,67 @@ class BridgeService(ABC):
                 data=data,
             )
 
+            # log the outgoing request
+            request_ctx.log_outbound_request(request)
+
+            response = await client.send(request)
+
+            # log response
+            request_ctx.log_response(response)
+
         return JSONResponse(content=response.json(), status_code=response.status_code)
+
+    @abstractmethod
+    def register_routes(self) -> None:
+        """
+        Register endpoint routes for this bridge service.
+
+        Subclasses should override this to register their specific endpoints.
+        Use self.routes.add_exact() or self.routes.add_regex() to register.
+        """
+        pass
+
+    async def handle_request(self, request_ctx: RequestContext) -> Response:
+        """
+        Handle an incoming request by routing to the appropriate handler.
+
+        Args:
+            request_ctx: Request context with bridge/homeserver info
+
+        Returns:
+            Response from the matched handler
+
+        Raises:
+            RouteNotFoundError: If no route matches and no fallback is set
+        """
+        path = request_ctx.request.path_params.get("path")
+        logger.info(f"Handling {self.bridge_type} bridge request to {path}")
+
+        try:
+            handler = self.routes.match_or_fallback(path)
+            return await handler(request_ctx)
+        except RouteNotFoundError as e:
+            logger.error(f"No handler for path '{path}': {e}")
+            return JSONResponse(
+                content={"error": f"Endpoint not implemented: {path}"}, status_code=501
+            )
+
+    async def unhandled_endpoint(self, request_ctx: RequestContext) -> Response:
+        """
+        Default fallback handler for unmatched endpoints.
+
+        Can be overridden by subclasses to provide custom behavior.
+        """
+        path = request_ctx.request.path_params.get("path")
+        logger.warning(f"Unhandled endpoint for {self.bridge_type}: {path}")
+        return JSONResponse(
+            content={
+                "error": "Endpoint not implemented",
+                "path": path,
+                "bridge_type": self.bridge_type,
+            },
+            status_code=501,
+        )
 
     @property
     def username(self):
@@ -130,53 +200,110 @@ class BridgeService(ABC):
 
 class WhatsappBridgeService(BridgeService):
     """
+    WhatsApp Bridge Service implementation.
+
     Request Flow:
-
     1. WA -> HS: _matrix/client/versions - checks matrix homeserver version
-       WA <- HS: response
-
-
-    2. WA -> HS: _matrix/client/v3/account/whoami
-        WA <- HS: {'user_id': '@whatsappbot:matrix.localhost.me', 'is_guest': False}
-
-    3. WA -> HS: _matrix/client/v3/register - tries to register the whatsapp user. I need to append the _bridge_manager__ prefix before the whatsapp bridge id (need a custom id). This is going to the user on the homeserver and will be the prefix for the users. This is how I'm going to know which bridge the user belogs to on the homeserver.
-       WA <- HS:
+    2. WA -> HS: _matrix/client/v3/account/whoami - verifies bot identity
+    3. WA -> HS: _matrix/client/v3/register - registers whatsapp users
     """
 
-    async def handle_request(self, request_ctx: RequestContext) -> Response:
-        """Handle an incoming bridge request; `request_ctx` is a RequestContext built by the appservice catchall."""
-        path = request_ctx.request.path_params.get("path")
-        path_mapper = {
-            "_matrix/client/versions": self.matrix_version,
-            "_matrix/client/v3/account/whoami": self.whoami,
-            "_matrix/client/v1/appservice/whatsapp/ping": self.ping,
-            "_matrix/client/v1/media/config": self.media_config,
-            f"_matrix/client/v3/profile/@whatsappbot:{self.homeserver_name}/avatar_url": self.avatar_url,
-            f"_matrix/client/v3/profile/@whatsappbot:{self.homeserver_name}/displayname": self.displayname,
-            "_matrix/client/v3/register": self.register,
-        }
+    def register_routes(self) -> None:
+        """Register WhatsApp-specific Matrix Client API endpoints"""
+        # Use common handlers for standard endpoints
+        self.routes.add_exact(
+            "_matrix/client/versions",
+            lambda ctx: MatrixClientAPIHandlers.versions(ctx, self.homeserver),
+            "Matrix client API versions",
+        )
+        self.routes.add_exact(
+            "_matrix/client/v3/account/whoami",
+            self.whoami,  # Keep custom implementation for username translation
+            "Check bot identity",
+        )
+        self.routes.add_exact(
+            "_matrix/client/v1/media/config",
+            lambda ctx: MatrixClientAPIHandlers.media_config(ctx, self.homeserver),
+            "Media configuration",
+        )
+        self.routes.add_exact(
+            "_matrix/client/v3/register",
+            lambda ctx: MatrixClientAPIHandlers.register(ctx, self.homeserver),
+            "User registration",
+        )
 
-        handler_func = path_mapper.get(path)
-        if not handler_func:
-            raise NotImplementedError(f"Path '{path}' is not handled")
-
-        return await handler_func(request_ctx)
-
-    async def matrix_version(self, request_ctx: RequestContext) -> Response:
-        # Forward using helper values
-        return await self.homeserver.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=request_ctx.request.path_params["path"],
-            headers=(
-                request_ctx.headers
-                if request_ctx and request_ctx.headers is not None
-                else dict(request_ctx.request.headers)
+        # Regex patterns for dynamic paths
+        self.routes.add_regex(
+            r"_matrix/client/v1/appservice/\w+/ping",
+            self.ping,  # Keep custom implementation for transaction mapping
+            "Appservice ping",
+        )
+        self.routes.add_regex(
+            rf"_matrix/client/v3/profile/@\w+:{re.escape(self.homeserver_name)}/avatar_url",
+            lambda ctx: MatrixClientAPIHandlers.profile_avatar_url(
+                ctx, self.homeserver
             ),
-            # content=(request_ctx.body_bytes if request_ctx else None),
+            "User avatar URL",
+        )
+        self.routes.add_regex(
+            rf"_matrix/client/v3/profile/@\w+:{re.escape(self.homeserver_name)}/displayname",
+            lambda ctx: MatrixClientAPIHandlers.profile_displayname(
+                ctx, self.homeserver
+            ),
+            "User display name",
+        )
+
+        # Media endpoints
+        self.routes.add_regex(
+            r"^_matrix/client/v1/media/download/[^/]+/.+",
+            lambda ctx: MatrixClientAPIHandlers.media_download(ctx, self.homeserver),
+            "Media download endpoint",
+        )
+        self.routes.add_exact(
+            "_matrix/client/v1/media/upload",
+            lambda ctx: MatrixClientAPIHandlers.media_upload(ctx, self.homeserver),
+            "Media upload endpoint",
+        )
+
+        # Room membership endpoints
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/join",
+            lambda ctx: MatrixClientAPIHandlers.room_join(ctx, self.homeserver),
+            "Room join endpoint",
+        )
+
+        # Room state endpoints
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/state$",
+            lambda ctx: MatrixClientAPIHandlers.room_state_all(ctx, self.homeserver),
+            "Room state retrieval",
+        )
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/members",
+            lambda ctx: MatrixClientAPIHandlers.room_members(ctx, self.homeserver),
+            "Room members list",
+        )
+
+        # Room event sending endpoints
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/send/[^/]+/.+",
+            lambda ctx: MatrixClientAPIHandlers.room_send_event(ctx, self.homeserver),
+            "Send room event (messages, reactions, etc.)",
         )
 
     async def whoami(self, request_ctx: RequestContext) -> Response:
+        """
+        Bridge checking who it is on the homserver and making sure it's username matches with the homserver.
+        However, when i send this request as the bridge manager I will always get back the bridge managers username as the whoami.
+        I need to translate the outbound request
+
+        Args:
+            request_ctx (RequestContext): _description_
+
+        Returns:
+            Response: _description_
+        """
+
         response = await self.homeserver.send_request(
             request_ctx=request_ctx,
             method=request_ctx.request.method,
@@ -186,12 +313,13 @@ class WhatsappBridgeService(BridgeService):
                 if request_ctx and request_ctx.headers is not None
                 else dict(request_ctx.request.headers)
             ),
+            query_params=request_ctx.query_params,
         )
         response_body = json.loads(response.body)
-        response_body["user_id"] = f"@whatsappbot:{self.homeserver_name}"
         return JSONResponse(content=response_body, status_code=response.status_code)
 
     async def ping(self, request_ctx: RequestContext) -> Response:
+
         body_json = request_ctx.body_json if request_ctx else None
         if not body_json:
             raise ValueError("Missing or invalid JSON body")
@@ -202,8 +330,11 @@ class WhatsappBridgeService(BridgeService):
 
         body = json.dumps(body_json)
 
+        # Replace bridge-specific appservice ID with bridge_manager ID
         path = request_ctx.request.path_params.get("path")
-        path = path.replace("whatsapp", self.bridge_manager_config.ID)
+        path = re.sub(
+            r"(_bridge_manager__)[^/]+", rf"{self.bridge_manager_config.ID}", path
+        )
 
         headers = (
             request_ctx.headers.copy()
@@ -222,119 +353,4 @@ class WhatsappBridgeService(BridgeService):
             path=path,
             headers=headers,
             data=body,
-        )
-
-    async def media_config(self, request_ctx: RequestContext) -> Response:
-        response = await self.homeserver.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=request_ctx.request.path_params["path"],
-            headers=(
-                request_ctx.headers
-                if request_ctx and request_ctx.headers is not None
-                else dict(request_ctx.request.headers)
-            ),
-        )
-        return response
-
-    async def avatar_url(self, request_ctx: RequestContext) -> Response:
-        bridge_manager_full_username = (
-            f"@{self.bridge_manager_config.ID}:{self.homeserver_name}"
-        )
-
-        path_username = (
-            request_ctx.translate_username(
-                bridge_manager_full_username, to="homeserver"
-            )
-            if request_ctx
-            else request_ctx.request.path_params.get("path")
-        )
-        path = f"/_matrix/client/v3/profile/{path_username}/avatar_url"
-
-        # query_params = (
-        #     request_ctx.query_params.copy()
-        #     if request_ctx and request_ctx.query_params is not None
-        #     else dict(request_ctx.request.query_params)
-        # )
-        # query_params["user_id"] = bridge_manager_full_username
-
-        response = await self.homeserver.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=path,
-            headers=(
-                request_ctx.headers
-                if request_ctx and request_ctx.headers is not None
-                else dict(request_ctx.request.headers)
-            ),
-            # query_params=query_params,
-        )
-        return response
-
-    async def displayname(self, request_ctx: RequestContext) -> Response:
-
-        bridge_manager_full_username = (
-            f"@{self.bridge_manager_config.ID}:{self.homeserver_name}"
-        )
-
-        path = (
-            request_ctx.translate_username(
-                bridge_manager_full_username, to="homeserver"
-            )
-            if request_ctx
-            else request_ctx.request.path_params.get("path")
-        )
-
-        query_params = (
-            request_ctx.query_params.copy()
-            if request_ctx and request_ctx.query_params is not None
-            else dict(request_ctx.request.query_params)
-        )
-        query_params["user_id"] = bridge_manager_full_username
-
-        response = await self.homeserver.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=path,
-            headers=(
-                request_ctx.headers
-                if request_ctx and request_ctx.headers is not None
-                else dict(request_ctx.request.headers)
-            ),
-            query_params=query_params,
-        )
-        return response
-
-    async def register(self, request_ctx: RequestContext) -> Response:
-
-        # query_string
-        # b'user_id=%40whatsappbot%3Amatrix.localhost.me'
-        # @whatsappbot:matrix.localhost.me -> @_bridge_manager__whatsapp_7__whatsappbot:matrix.localhost.me
-        request_ctx.query_params["user_id"] = request_ctx.translate_username(
-            request_ctx.query_params["user_id"], to="homeserver"
-        )
-
-        # body
-        # '{"username":"whatsappbot","inhibit_login":true,"type":"m.login.application_service"}'
-        request_ctx.body_json["username"] = request_ctx.translate_username(
-            f'@{request_ctx.body_json["username"]}:random', to="homeserver"
-        )
-        request_ctx.body_json["username"] = (
-            request_ctx.body_json["username"].replace("@", "").split(":")[0]
-        )
-
-        headers = (
-            request_ctx.headers.copy()
-            if request_ctx and request_ctx.headers is not None
-            else dict(request_ctx.request.headers)
-        )
-        headers.pop("content-length", None)
-
-        return await self.homeserver.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=request_ctx.request.path_params["path"],
-            headers=headers,
-            query_params=request_ctx.query_params,
-            json=request_ctx.body_json,
         )

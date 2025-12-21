@@ -16,6 +16,7 @@ from ..database.repositories import (
     HomeserversRepository,
     RequestsRepository,
 )
+from .bridge_resolver import BridgeResolver, BridgeResolutionMethod, BridgeNotFoundError
 
 if TYPE_CHECKING:
     from .bridge_service import BridgeService
@@ -47,7 +48,7 @@ class RequestContext:
         bridge_manager_config: BridgeManagerConfig,
         # these need to be bridge and homserver classes
         bridge: Optional[Any] = None,
-        bridge_discovery_method: Optional[str] = None,
+        bridge_discovery_method: Optional[BridgeResolutionMethod] = None,
         homeserver: Optional[Any] = None,
         body_json: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, Any]] = None,
@@ -68,8 +69,8 @@ class RequestContext:
         self.query_params = query_params
         self.transaction_id = transaction_id
 
-        request_model = self.log_inbound_request()
-        self.request_id = request_model.id
+        # Request ID will be set by log_inbound_request() when called from create()
+        self.request_id = None
 
     @classmethod
     async def create(
@@ -94,15 +95,35 @@ class RequestContext:
         except ValueError:
             raise ValueError("source must be either 'homeserver' or 'bridge'")
 
-        bridge = cls.discover_bridge(
-            bridge_manager_config=bridge_manager_config,
-            headers=headers,
-            source_enum=source_enum,
-            path=path,
-            body_json=body_json,
-            body=body,
-        )
-        homeserver = cls.discover_homeserver(headers=headers, source_enum=source_enum)
+        # Initialize with None - will be populated if discovery succeeds
+        bridge = None
+        bridge_discovery_method = None
+        homeserver = None
+        discovery_error = None
+
+        # Try to discover bridge - don't fail if it's not found, just log it
+        try:
+            resolver = BridgeResolver(bridge_manager_config)
+            bridge, bridge_discovery_method = resolver.resolve(
+                source=source_enum,
+                headers=headers,
+                path=path,
+                body_json=body_json,
+                query_params=query_params,
+            )
+        except Exception as e:
+            discovery_error = f"Bridge discovery failed: {str(e)}"
+
+        # Try to discover homeserver - don't fail if it's not found, just log it
+        try:
+            homeserver = cls.discover_homeserver(
+                headers=headers, source_enum=source_enum
+            )
+        except Exception as e:
+            if discovery_error:
+                discovery_error += f" | Homeserver discovery failed: {str(e)}"
+            else:
+                discovery_error = f"Homeserver discovery failed: {str(e)}"
 
         # create instance of the request context
         inst = cls(
@@ -110,45 +131,63 @@ class RequestContext:
             source=source_enum,
             bridge_manager_config=bridge_manager_config,
             bridge=bridge,
-            # bridge_discovery_method=bridge_discovery_method,
+            bridge_discovery_method=bridge_discovery_method,
             homeserver=homeserver,
             body_json=body_json,
             headers=headers,
             query_params=query_params,
-            # transaction_id=transaction_id,
         )
+
+        # Log the inbound request - this MUST happen for all requests
+        request_model = inst.log_inbound_request(discovery_error=discovery_error)
+        inst.request_id = request_model.id
+
+        # Now raise the error if discovery failed (after logging)
+        if discovery_error:
+            if bridge is None:
+                raise BridgeNotFoundError(discovery_error)
+            elif homeserver is None:
+                raise ValueError(discovery_error)
 
         return inst
 
-    def log_inbound_request(self):
+    def log_inbound_request(self, discovery_error: Optional[str] = None):
         """
         Serialize request to be stored in the database. Only keeping the important bits to keep lean.
 
-        Keeps:
-            -
+        This method logs ALL requests, even if bridge or homeserver discovery fails.
+        Bridge and homeserver IDs are optional and only logged if discovery succeeded.
 
         Args:
-            request (Request): Original request
+            discovery_error: Optional error message if bridge/homeserver discovery failed
         """
         requests_repo = RequestsRepository()
 
-        data = json.dumps(
-            {
-                "method": self.request.method,
-                "url": self.request.url._url,
-                "path": self.request.path_params.get("path", ""),
-                "query_params": self.query_params,
-                "headers": self.headers,
-                "body_json": self.body_json,
-            }
-        )
+        # Build request data (discovery error is now a separate column)
+        request_data = {
+            "method": self.request.method,
+            "url": self.request.url._url,
+            "path": self.request.path_params.get("path", ""),
+            "query_params": self.query_params,
+            "headers": self.headers,
+            "body_json": self.body_json,
+        }
+
+        data = json.dumps(request_data)
 
         # create a request record in the database
+        # bridge_id, homeserver_id, bridge_discovery_method, and discovery_error are optional
         request_model = requests_repo.create(
             inbound_at=datetime.now(timezone.utc),
             source=self.source.value,
-            bridge_id=self.bridge.bridge_id,
-            homeserver_id=self.homeserver.id,
+            bridge_id=self.bridge.bridge_id if self.bridge else None,
+            homeserver_id=self.homeserver.id if self.homeserver else None,
+            bridge_discovery_method=(
+                self.bridge_discovery_method.value
+                if self.bridge_discovery_method
+                else None
+            ),
+            discovery_error=discovery_error,
             method=self.request.method,
             path=self.request.path_params.get("path", ""),
             inbound_request=data,
@@ -173,7 +212,7 @@ class RequestContext:
                 "method": request.method,
                 "url": str(request.url),
                 "path": request.url.path,
-                "query_params": dict(request.url.query),
+                "query_params": request.url.query.decode("utf-8"),
                 "headers": dict(request.headers),
                 "body_json": body_json,
             }
@@ -186,138 +225,42 @@ class RequestContext:
         )
 
     def log_response(self, response):
+        """
+        Log the response from either homeserver or bridge.
 
+        Supports both httpx.Response and FastAPI Response objects.
+        """
         requests_repo = RequestsRepository()
 
-        content = response.content.decode("utf-8")
-        content = json.loads(content) if content else None
-        data = json.dumps(content)
+        # Handle different response types
+        if hasattr(response, "content"):
+            # httpx.Response
+            content = (
+                response.content.decode("utf-8")
+                if isinstance(response.content, bytes)
+                else response.content
+            )
+        elif hasattr(response, "body"):
+            # FastAPI Response
+            content = (
+                response.body.decode("utf-8")
+                if isinstance(response.body, bytes)
+                else response.body
+            )
+        else:
+            content = str(response)
+
+        try:
+            content_json = json.loads(content) if content else None
+        except (json.JSONDecodeError, TypeError):
+            # If not JSON, store as string
+            content_json = content
+
+        data = json.dumps(content_json)
 
         requests_repo.update(
             id_=self.request_id, response=data, response_status=response.status_code
         )
-
-    @classmethod
-    def discover_bridge(
-        cls, bridge_manager_config, headers, source_enum, path, body_json, body
-    ):
-        """
-        Bridge Discovery Process
-        ---
-
-        I need to identify which bridge the request belongs to in order to forward requests to the appropriate bridge.
-
-        If the request has originated from the bridge then I can get the bridge using the as_token.
-
-        If the request originated from the homeserver I'll need to use either:
-            a. username in the request path
-            b. transaction id reference that's been saved from a previous request
-            c. the bridges username in the body of the request
-            d. the bridge owners username in the body of the request
-
-        """
-        # the bridge registry provides convenience to create the bridge instance
-        registry = BridgeRegistry(bridge_manager_config)
-
-        # if it's from the bridge that then I can get the bridge using the as_token
-        if source_enum == RequestSource.BRIDGE:
-            as_token = cls._extract_auth_token_from_headers(headers)
-            if not as_token:
-                raise ValueError(
-                    "Bridge requests must include an as_token in the Authorization header."
-                )
-
-            bridge = registry.get_bridge(as_token=as_token)
-            bridge_discovery_method = "as_token"
-
-        # if the request originated from the server I'll have to find a username or a transaction id to identify a bridge
-        if source_enum == RequestSource.HOMESERVER:
-
-            bridge = None
-
-            # a. try finding bridge from the username in the path
-            username_pattern = rf".*/{bridge_manager_config.username_regex}"
-            match = re.match(username_pattern, path)
-            if match:
-                try:
-                    bridge_id = match.group("bridge_id")
-                    bridge = registry.get_bridge(bridge_id=bridge_id)
-                except Exception as e:
-                    raise ValueError(
-                        f"Failed to get bridge using the bridge ID found in the request path username: {e}"
-                    )
-
-            # b. try using a transaction id match which can be found in either the body or the path
-            if not bridge:
-                transactions_repo = TransactionMappingsRepository()
-
-                # try finding the txn id in the path or the body
-                txn_id_match = re.match(
-                    r"_matrix/app/v1/transactions/(?P<txn_id>\d+)", path
-                )
-                txn_id_path = txn_id_match.group("txn_id") if txn_id_match else None
-                txn_id_body = body_json.get("transaction_id") if body else None
-
-                txn_id = txn_id_path or txn_id_body
-                if txn_id:
-                    bridge = transactions_repo.get_bridge_by_transaction(
-                        transaction_id=txn_id
-                    )
-
-            # TODO: use a room_id mapping before resorting to searching for usernames in the body
-
-            # c, d. try finding the username of either the bridge or the bridge owner in the body
-            if not bridge:
-
-                # iterate through all dicts and strings in the body to find a pattern match
-                def find_username(obj, pattern):
-                    if isinstance(obj, dict):
-                        for v in obj.values():
-                            if isinstance(v, str):
-                                if re.match(pattern, v):
-                                    return v
-                            else:
-                                result = find_username(v, pattern)
-                                if result:
-                                    return result
-                    elif isinstance(obj, list):
-                        for item in obj:
-                            result = find_username(item, pattern)
-                            if result:
-                                return result
-                    return None
-
-                # try finding the bridge owners username in the body
-                owner_username_pattern = (
-                    rf"@(?P<homeserver_username>[^:]+):(?P<homeserver>[^\s/]+)"
-                )
-                owner_username_in_body = find_username(
-                    body_json, owner_username_pattern
-                )
-
-                # try finding the bridges username in the body
-                bridge_username_pattern = bridge_manager_config.username_regex
-                bridge_username_in_body = find_username(
-                    body_json, bridge_username_pattern
-                )
-
-                # not sure I understand why I need both the bridge username and the owner username
-                # looks like I can't find the bridge service from the owner username?
-                service = None
-                if bridge_username_in_body:
-                    match = re.match(bridge_username_pattern, bridge_username_in_body)
-                    service = match.group("bridge_type")
-
-                if owner_username_in_body and service:
-                    bridge = registry.get_bridge(
-                        owner_username=owner_username_in_body, service=service
-                    )
-
-            # Raise error if bridge is still not found
-            if not bridge:
-                raise ValueError("Bridge not found for the given request.")
-
-        return bridge
 
     @classmethod
     def discover_homeserver(cls, headers, source_enum):
@@ -446,14 +389,14 @@ class RequestContext:
                             obj[k] = self.translate_username(v, to=to)
 
                     else:
-                        obj[k] = replace(v)
+                        obj[k] = replace(v, to)
 
                 return obj
 
             elif isinstance(obj, list):
-                return [replace(i) for i in obj]
+                return [replace(i, to) for i in obj]
 
             else:
                 return obj
 
-        return replace(self.body_json.copy())
+        return replace(self.body_json.copy(), to)

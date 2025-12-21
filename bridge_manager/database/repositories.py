@@ -11,6 +11,7 @@ from .models import (
     Base,
     TransactionMappings,
     Request,
+    RoomBridgeMapping,
 )
 from .engine import DatabaseEngine
 
@@ -88,6 +89,13 @@ class BridgesRepository(BaseRepository):
                     self.model.owner_matrix_username == owner_matrix_username,
                     self.model.bridge_service == bridge_service,
                 )
+            )
+            return session.execute(statement).scalar_one_or_none()
+
+    def get_by_orchestrator_id(self, orchestrator_id: str):
+        with self.Session() as session:
+            statement = select(self.model).where(
+                self.model.orchestrator_id == orchestrator_id
             )
             return session.execute(statement).scalar_one_or_none()
 
@@ -185,6 +193,47 @@ class TransactionMappingsRepository(BaseRepository):
                 obj = self.model(
                     transaction_id=transaction_id,
                     bridge_as_token=bridge_as_token,
+                    bridge_id=bridge_id,
+                )
+                session.add(obj)
+                session.commit()
+                session.refresh(obj)
+                return obj
+
+
+class RoomBridgeMappingRepository(BaseRepository):
+    model = RoomBridgeMapping
+
+    def get_all(self):
+        with self.Session() as session:
+            statement = select(self.model)
+            return session.execute(statement).scalars().all()
+
+    def get_bridge_by_room_id(self, room_id: str):
+        """Get bridge_id associated with a room_id"""
+        with self.Session() as session:
+            statement = select(self.model).where(self.model.room_id == room_id)
+            mapping = session.execute(statement).scalar_one_or_none()
+            return mapping.bridge_id if mapping else None
+
+    def upsert(self, room_id: str, bridge_id: int):
+        """
+        Create or update room-bridge mapping.
+        Updates last_seen_at if mapping exists.
+        """
+        with self.Session() as session:
+            statement = select(self.model).where(self.model.room_id == room_id)
+            existing = session.execute(statement).scalar_one_or_none()
+
+            if existing:
+                existing.last_seen_at = datetime.now(UTC)
+                existing.bridge_id = bridge_id  # Update in case it changed
+                session.commit()
+                session.refresh(existing)
+                return existing
+            else:
+                obj = self.model(
+                    room_id=room_id,
                     bridge_id=bridge_id,
                 )
                 session.add(obj)

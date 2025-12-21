@@ -4,15 +4,19 @@ from typing import TYPE_CHECKING
 import json
 import httpx
 import re
+import logging
 from fastapi import Response
 
 from fastapi.responses import JSONResponse
 
 from ..bridge_registry import BridgeRegistry
 from ..database.repositories import TransactionMappingsRepository
+from .route_registry import RouteRegistry, RouteNotFoundError
 
 if TYPE_CHECKING:
     from .models import RequestContext
+
+logger = logging.getLogger(__name__)
 
 
 class HomeserverService:
@@ -21,74 +25,94 @@ class HomeserverService:
         self.bridge_registry = BridgeRegistry(bridge_manager_config)
         self.bridge_manager_config = bridge_manager_config
 
+        # Initialize route registry
+        self.routes = RouteRegistry(fallback_handler=self.unhandled_endpoint)
+        self._register_routes()
+
+    def _register_routes(self) -> None:
+        """Register Application Service API endpoints"""
+        # Exact match for ping
+        self.routes.add_exact(
+            "_matrix/app/v1/ping", self.ping, "Appservice ping from homeserver"
+        )
+
+        # Prefix matches for user queries and transactions
+        self.routes.add_prefix(
+            "_matrix/app/v1/users/", self.users, "User query endpoint"
+        )
+        self.routes.add_prefix(
+            "_matrix/app/v1/transactions/",
+            self.transactions,
+            "Event transactions from homeserver",
+        )
+
     async def handle_request(self, request_ctx: "RequestContext") -> Response:
         """
-        Routes requests to the correct handler based on the request path
+        Routes requests to the correct handler based on the request path.
+
+        Args:
+            request_ctx: Request context with bridge/homeserver info
+
+        Returns:
+            Response from the matched handler
+
+        Raises:
+            RouteNotFoundError: If no route matches
         """
-
         path = request_ctx.request.path_params.get("path")
-        if path == "_matrix/app/v1/ping":
-            return await self.ping(request_ctx)
-        if path.startswith("_matrix/app/v1/users/"):
-            return await self.users(request_ctx)
-        if path.startswith("_matrix/app/v1/transactions/"):
-            return await self.transactions(request_ctx)
+        logger.info(f"Handling homeserver request to {path}")
 
-        raise NotImplementedError(f"Path '{path}' is not handled")
+        try:
+            handler = self.routes.match_or_fallback(path)
+            return await handler(request_ctx)
+        except RouteNotFoundError as e:
+            logger.error(f"No handler for homeserver path '{path}': {e}")
+            return JSONResponse(
+                content={"error": f"Endpoint not implemented: {path}"}, status_code=501
+            )
+
+    async def unhandled_endpoint(self, request_ctx: "RequestContext") -> Response:
+        """
+        Default fallback handler for unmatched homeserver endpoints.
+        """
+        path = request_ctx.request.path_params.get("path")
+        logger.warning(f"Unhandled homeserver endpoint: {path}")
+        return JSONResponse(
+            content={
+                "error": "Endpoint not implemented",
+                "path": path,
+                "service": "homeserver",
+            },
+            status_code=501,
+        )
 
     async def ping(self, request_ctx: "RequestContext") -> Response:
         """
         Handle ping requests from the homeserver.
 
-        Validates the transaction ID, looks up the associated bridge,
-        and forwards the ping request to that bridge.
+        The ping endpoint is a health check. The homeserver sends this
+        to verify the application service is reachable. We respond
+        immediately with 200 OK and an empty JSON object.
+
+        This is NOT forwarded to individual bridges - it's answered
+        directly by the bridge manager as per Matrix AS API spec.
+
+        Flow:
+        1. Bridge → Homeserver: POST /_matrix/client/v1/appservice/{id}/ping
+        2. Homeserver → Bridge Manager: POST /_matrix/app/v1/ping
+        3. Bridge Manager → Homeserver: 200 OK {} (this response)
+        4. Homeserver → Bridge: 200 OK {"duration_ms": 123}
         """
+        logger.info("Received ping from homeserver")
 
-        # Extract and validate the request body
+        # Validate request body contains transaction_id (optional but good practice)
         body_json = request_ctx.body_json if request_ctx else None
-        if not body_json:
-            return JSONResponse(
-                content={"error": "Missing or invalid JSON body"}, status_code=400
-            )
+        if body_json and "transaction_id" in body_json:
+            transaction_id = body_json["transaction_id"]
+            logger.info(f"Ping transaction_id: {transaction_id}")
 
-        # Extract transaction ID from the body
-        transaction_id = body_json.get("transaction_id")
-        if not transaction_id:
-            return JSONResponse(
-                content={"error": "Transaction ID missing"}, status_code=400
-            )
-
-        # Look up which bridge this transaction belongs to
-        mapping = TransactionMappingsRepository().get_bridge_by_transaction(
-            transaction_id
-        )
-        bridge_as_token = mapping.bridge_as_token if mapping else None
-
-        if not bridge_as_token:
-            return JSONResponse(
-                content={"error": "Unknown transaction ID"}, status_code=404
-            )
-
-        # Get the bridge service instance
-        bridge_service = self.bridge_registry.get_bridge(bridge_as_token)
-
-        # Prepare headers for forwarding to the bridge
-        headers = (
-            request_ctx.headers.copy()
-            if request_ctx and request_ctx.headers is not None
-            else {}
-        )
-        headers.pop("content-length", None)  # Remove to let httpx recalculate
-
-        # Forward the ping request to the appropriate bridge
-        body = json.dumps(body_json)
-        return await bridge_service.send_request(
-            request_ctx=request_ctx,
-            method=request_ctx.request.method,
-            path=request_ctx.request.path_params["path"],
-            headers=headers,
-            data=body,
-        )
+        # Return 200 OK with empty JSON (per Matrix AS API spec)
+        return JSONResponse(content={}, status_code=200)
 
     async def users(self, request_ctx: "RequestContext") -> Response:
 
@@ -147,8 +171,8 @@ class HomeserverService:
                 request = client.build_request(
                     method=method,
                     url=url,
-                    params=query_params,
                     headers=headers,
+                    params=query_params,
                     content=content,
                     json=json,
                     data=data,
@@ -187,17 +211,19 @@ class HomeserverService:
         if body_json is None:
             return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
 
-        rewritten = request_ctx.rewrite_usernames_in_body(to="bridge")
-        if rewritten is not None:
-            body_json = rewritten
+        # rewritten = request_ctx.rewrite_usernames_in_body(to="bridge")
+        # if rewritten is not None:
+        # body_json = rewritten
 
         headers = (
             request_ctx.headers
             if request_ctx and request_ctx.headers is not None
             else dict(request_ctx.request.headers)
         )
+        headers.pop("content-length", None)
 
         response = await bridge_service.send_request(
+            request_ctx=request_ctx,
             method=request_ctx.request.method,
             path=request_ctx.request.path_params["path"],
             headers=headers,
