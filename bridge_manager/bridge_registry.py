@@ -4,10 +4,13 @@ from .database.models import Bridges
 
 
 class BridgeRegistry:
+    """Registry for managing bridge instances with caching for performance."""
 
     def __init__(self, bridge_manager_config: BridgeManagerConfig):
         self.bridge_manager_config = bridge_manager_config
         self.bridges_repository = BridgesRepository()
+        # Cache to avoid repeated DB lookups
+        self._bridge_cache = {}
 
     # TODO: Register bridge (the orchestrator will register the bridge instance)
     def register_bridge(
@@ -36,7 +39,7 @@ class BridgeRegistry:
     def get_bridge(
         self,
         as_token: str = None,
-        bridge_id: str = None,
+        bridge_id: int = None,
         orchestrator_id: str = None,
         owner_username: str = None,
         service: str = None,
