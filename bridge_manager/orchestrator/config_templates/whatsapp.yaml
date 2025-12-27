@@ -401,7 +401,7 @@ bridge:
         #   cross-signed-verified - Require valid cross-signing, plus a valid user signature from the bridge bot.
         #                           Note that creating user signatures from the bridge bot is not currently possible.
         #   verified - Require manual per-device verification
-        #              (currently only possible by modifying the `trust` column in the `crypto_device` database table).
+-        #              (currently only possible by modifying the `trust` column in the `crypto_device` database table).
         verification_levels:
             # Minimum level for which the bridge should send keys to when bridging messages from WhatsApp to Matrix.
             receive: unverified

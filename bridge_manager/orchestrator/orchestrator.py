@@ -61,10 +61,9 @@ class Whatsapp:
     SERVICE = "whatsapp"
 
     # docker image to create the bridge with
-    DOCKER_IMAGE = "dock.mau.dev/mautrix/whatsapp:latest"
-
+    DOCKER_IMAGE = "litetex/mau.mautrix.whatsapp:latest"
     # The bridges config file name in the config_templates folder
-    CONFIG_TEMPLATE_FILENAME = "whatsapp.yaml"
+    CONFIG_TEMPLATE_FILENAME = "whatsapp2.yaml"
 
     # The location in the bridge container the config file should go
     CONFIG_LOCATION_BRIDGE = "/data/"
