@@ -8,19 +8,20 @@ strategies (auth token, path username, transaction ID, body username, etc.).
 from __future__ import annotations
 import re
 import json
-import logging
+import time
 from typing import TYPE_CHECKING, Optional, Dict, Any
 from enum import Enum
 
 from ..config import BridgeManagerConfig
 from ..bridge_registry import BridgeRegistry
 from ..database.repositories import TransactionMappingsRepository
+from logger import Logger
 
 if TYPE_CHECKING:
     from .bridge_service import BridgeService
     from .models import RequestSource
 
-logger = logging.getLogger(__name__)
+logger = Logger().get_logger(__name__)
 
 
 class BridgeResolutionMethod(Enum):
@@ -97,6 +98,7 @@ class BridgeResolver:
         """
         from .models import RequestSource
 
+        start_time = time.time()
         logger.debug(
             f"Attempting to resolve bridge for {source.value} request to {path}"
         )
@@ -104,21 +106,32 @@ class BridgeResolver:
         for resolver in self._resolvers:
             resolver_name = resolver.__name__
             logger.debug(f"Trying resolver: {resolver_name}")
+            resolver_start = time.time()
             try:
                 bridge = resolver(source, headers, path, body_json, query_params)
                 if bridge:
                     method = self._get_method_name(resolver)
+                    elapsed = (time.time() - start_time) * 1000  # ms
                     logger.info(
-                        f"Bridge resolved via {method.value}: bridge_id={bridge.bridge_id}"
+                        f"✓ Bridge resolved via {method.value} in {elapsed:.2f}ms: bridge_id={bridge.bridge_id}"
                     )
                     return bridge, method
                 else:
-                    logger.debug(f"{resolver_name} returned None")
+                    resolver_elapsed = (time.time() - resolver_start) * 1000
+                    logger.debug(
+                        f"{resolver_name} returned None ({resolver_elapsed:.2f}ms)"
+                    )
             except Exception as e:
-                logger.warning(f"{resolver_name} failed with exception: {e}")
+                resolver_elapsed = (time.time() - resolver_start) * 1000
+                logger.warning(
+                    f"{resolver_name} failed with exception ({resolver_elapsed:.2f}ms): {e}"
+                )
 
         # No resolver succeeded
-        logger.error(f"Failed to resolve bridge for {source.value} request to {path}")
+        elapsed = (time.time() - start_time) * 1000
+        logger.error(
+            f"✗ Failed to resolve bridge after {elapsed:.2f}ms for {source.value} request to {path}"
+        )
         raise BridgeNotFoundError(
             f"Could not identify bridge for request. Source: {source.value}, Path: {path}"
         )
@@ -231,8 +244,11 @@ class BridgeResolver:
             return None
 
         try:
-            bridge_id = match.group("bridge_id")
-            bridge = self.registry.get_bridge(bridge_id=bridge_id)
+            orchestrator_id = match.group("bridge_id")
+            bridge = self.registry.get_bridge(orchestrator_id=orchestrator_id)
+            logger.info(
+                f"Resolved bridge from path username: orchestrator_id={orchestrator_id} -> bridge_id={bridge.bridge_id}"
+            )
             return bridge
         except (ValueError, KeyError) as e:
             logger.debug(f"Failed to resolve bridge from path username: {e}")
@@ -655,8 +671,11 @@ class BridgeResolver:
             if not match:
                 return None
 
-            bridge_id = match.group("bridge_id")
-            bridge = self.registry.get_bridge(bridge_id=bridge_id)
+            orchestrator_id = match.group("bridge_id")
+            bridge = self.registry.get_bridge(orchestrator_id=orchestrator_id)
+            logger.info(
+                f"Resolved bridge from body username: orchestrator_id={orchestrator_id} -> bridge_id={bridge.bridge_id}"
+            )
             return bridge
         except (ValueError, KeyError) as e:
             logger.debug(f"Failed to resolve bridge from body username: {e}")

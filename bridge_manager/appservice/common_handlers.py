@@ -1,22 +1,22 @@
-"""
-Common Matrix Client API handlers that can be reused across bridge types.
+"""Common Matrix Client API handlers that can be reused across bridge types.
 
 These handlers implement standard Matrix API endpoints that behave the same
 way for most bridges, reducing duplication when adding new bridge services.
 """
 
 from __future__ import annotations
-import logging
 from typing import TYPE_CHECKING
+import httpx
 
 from fastapi.responses import JSONResponse
+from logger import Logger
 
 if TYPE_CHECKING:
     from .models import RequestContext
     from .homeserver_service import HomeserverService
     from fastapi import Response
 
-logger = logging.getLogger(__name__)
+logger = Logger().get_logger(__name__)
 
 
 class MatrixClientAPIHandlers:
@@ -427,16 +427,268 @@ class MatrixClientAPIHandlers:
         )
 
     @staticmethod
+    async def room_state_event(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey} endpoint.
+
+        Get a specific state event from a room (e.g., m.room.power_levels).
+
+        Per Matrix spec:
+        - Returns the content of the specified state event
+        - eventType: The type of state to look up (e.g., m.room.power_levels)
+        - stateKey: The state_key of the event (often empty string "")
+        - User must have access to the room
+        - Supports user_id query parameter for AS impersonation
+
+        Flow:
+        1. Bridge sends GET /rooms/{roomId}/state/{eventType}/{stateKey}?user_id={bridged_user}
+        2. Bridge Manager forwards to homeserver with proper authentication
+        3. Homeserver returns the state event content
+        4. Bridge Manager passes response back to bridge
+        """
+        import re
+
+        path = request_ctx.request.path_params.get("path")
+
+        # Extract room_id and event_type from path for logging
+        match = re.search(r"/rooms/([^/]+)/state/([^/]+)(?:/(.*))?$", path)
+        if match:
+            room_id = match.group(1)
+            event_type = match.group(2)
+            state_key = match.group(3) if match.group(3) is not None else ""
+        else:
+            room_id = "unknown"
+            event_type = "unknown"
+            state_key = ""
+
+        # Preserve query parameters (user_id for AS impersonation)
+        query_params = (
+            request_ctx.query_params.copy() if request_ctx.query_params else {}
+        )
+
+        # Extract user_id from query params for logging
+        user_id = query_params.get("user_id", "not specified")
+        logger.info(
+            f"Room state event: room={room_id}, type={event_type}, key='{state_key}', user={user_id}"
+        )
+
+        # Prepare headers and remove content-length for GET requests
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        # Forward to homeserver (GET request, no body)
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            query_params=query_params,
+        )
+
+    @staticmethod
+    async def room_invite(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle POST /_matrix/client/v3/rooms/{roomId}/invite endpoint.
+
+        Invite a user to a room.
+
+        Per Matrix spec:
+        - Invites a user to participate in a particular room
+        - Body must contain: {"user_id": "@user:homeserver.com"}
+        - Supports user_id query parameter for AS impersonation
+        - User making the invite must have appropriate permissions
+
+        Flow:
+        1. Bridge sends POST /rooms/{roomId}/invite?user_id={inviter}
+           with body: {"user_id": "@invitee:homeserver.com"}
+        2. Bridge Manager forwards to homeserver with proper authentication
+        3. Homeserver sends invite and returns {}
+        4. Bridge Manager passes response back to bridge
+        """
+        import json
+        import re
+
+        path = request_ctx.request.path_params.get("path")
+
+        # Extract room_id from path for logging
+        match = re.search(r"/rooms/([^/]+)/invite", path)
+        room_id = match.group(1) if match else "unknown"
+
+        # Get invitee from body
+        body_json = request_ctx.body_json if request_ctx else None
+        invitee = body_json.get("user_id") if body_json else "unknown"
+
+        # Preserve query parameters (user_id for AS impersonation - the inviter)
+        query_params = (
+            request_ctx.query_params.copy() if request_ctx.query_params else {}
+        )
+        inviter = query_params.get("user_id", "not specified")
+
+        logger.info(
+            f"Room invite: room={room_id}, inviter={inviter}, invitee={invitee}"
+        )
+
+        # Prepare headers
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        # Prepare body
+        body = json.dumps(body_json) if body_json else None
+
+        # Forward to homeserver
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            query_params=query_params,
+            data=body,
+        )
+
+    @staticmethod
+    async def room_join(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle POST /_matrix/client/v3/rooms/{roomId}/join endpoint.
+
+        Join a room.
+
+        Per Matrix spec:
+        - Joins a user to a particular room
+        - Body is optional (can be empty {} or contain third_party_signed)
+        - Supports user_id query parameter for AS impersonation
+        - User must be invited or room must allow joining
+
+        Flow:
+        1. Bridge sends POST /rooms/{roomId}/join?user_id={user}
+           with body: {} or {"third_party_signed": {...}}
+        2. Bridge Manager forwards to homeserver with proper authentication
+        3. Homeserver adds user to room and returns {"room_id": "..."}
+        4. Bridge Manager passes response back to bridge
+        """
+        import json
+        import re
+        from urllib.parse import unquote
+
+        path = request_ctx.request.path_params.get("path")
+
+        # Extract room_id from path for logging
+        # match = re.search(r"/rooms/([^/]+)/join", path)
+        # room_id = unquote(match.group(1)) if match else "unknown"
+
+        # Preserve query parameters (user_id for AS impersonation)
+        query_params = (
+            request_ctx.query_params.copy() if request_ctx.query_params else {}
+        )
+        # user_id = query_params.get("user_id", "not specified")
+
+        # Extract server name from room ID and add to query params if not present
+        # Room IDs are in format !localpart:server.name
+        # The server_name param tells Matrix which server(s) know about this room
+        # if "server_name" not in query_params and ":" in room_id:
+        #     server_from_room = room_id.split(":", 1)[1]
+        #     query_params["server_name"] = server_from_room
+        #     logger.info(f"Added server_name={server_from_room} to join request")
+
+        # logger.info(
+        #     f"Room join: room={room_id}, user={user_id}, query_params={query_params}"
+        # )
+
+        # Prepare headers
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        # Prepare body (may be empty)
+        body_json = request_ctx.body_json if request_ctx else None
+        body = json.dumps(body_json) if body_json is not None else None
+
+        # Forward to homeserver
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            query_params=query_params,
+            data=body,
+        )
+
+    @staticmethod
     async def room_members(
         request_ctx: RequestContext, homeserver: HomeserverService
     ) -> Response:
         """
         Handle GET /_matrix/client/v3/rooms/{roomId}/members endpoint.
 
-        Bridges use this to get member list for a room.
+        Get the list of members for a room.
 
         Per Matrix spec:
-        - Returns chunk array of m.room.member events
+        - Returns list of m.room.member state events
+        - Supports user_id query parameter for AS impersonation
+        - Optional 'at', 'membership', 'not_membership' query parameters
+
+        Flow:
+        1. Bridge sends GET /rooms/{roomId}/members?user_id={bridge_user}
+        2. Bridge Manager forwards to homeserver with proper authentication
+        3. Homeserver returns member list
+        4. Bridge Manager passes response back to bridge
+        """
+        import re
+
+        path = request_ctx.request.path_params.get("path")
+
+        # Extract room_id from path for logging
+        match = re.search(r"/rooms/([^/]+)/members", path)
+        room_id = match.group(1) if match else "unknown"
+
+        # Preserve query parameters (user_id for AS impersonation, plus filters)
+        query_params = (
+            request_ctx.query_params.copy() if request_ctx.query_params else {}
+        )
+        user_id = query_params.get("user_id", "not specified")
+
+        logger.info(f"Room members: room={room_id}, user={user_id}")
+
+        # Prepare headers and remove content-length for GET requests
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        # Forward to homeserver (GET request, no body)
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            query_params=query_params,
+        )
+
+    @staticmethod
+    async def capabilities(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle GET /capabilities - Returns server capabilities
+        https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv3capabilities
         - User must be joined to the room or have previously been joined
         - Supports optional query parameters:
           - at: server_name or event ID to get historical membership
@@ -574,6 +826,151 @@ class MatrixClientAPIHandlers:
             path=path,
             headers=headers,
             json=request_ctx.body_json if request_ctx.body_json else None,
+            query_params=query_params,
+        )
+
+    @staticmethod
+    async def room_create(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle POST /_matrix/client/v3/createRoom endpoint.
+
+        Bridges use this to create new Matrix rooms (DMs, group chats, etc.).
+
+        Per Matrix spec:
+        - POST request with room configuration in body
+        - Returns {room_id: "!roomid:homeserver"}
+        - Supports extensive configuration:
+          - visibility: public/private
+          - initial_state: array of state events to set
+          - preset: private_chat, public_chat, trusted_private_chat
+          - is_direct: boolean for DM indication
+          - power_level_content_override: custom power levels
+          - invite: array of user IDs to invite
+          - name, topic, room_alias_name, etc.
+        - Supports user_id query parameter for AS impersonation
+
+        Flow:
+        1. Bridge sends POST /createRoom?user_id={bridged_user}
+        2. Bridge Manager forwards to homeserver with proper authentication
+        3. Homeserver creates room and returns {room_id}
+        4. Bridge Manager stores room-bridge mapping
+        5. Response passed back to bridge
+        """
+        path = request_ctx.request.path_params.get("path")
+
+        # Preserve query parameters (user_id for AS impersonation)
+        query_params = (
+            request_ctx.query_params.copy() if request_ctx.query_params else {}
+        )
+
+        # Extract user_id from query params for logging
+        user_id = query_params.get("user_id", "not specified")
+
+        # Extract room name from body for logging
+        room_name = "unnamed"
+        if request_ctx.body_json and isinstance(request_ctx.body_json, dict):
+            initial_state = request_ctx.body_json.get("initial_state", [])
+            for state_event in initial_state:
+                if state_event.get("type") == "m.room.name":
+                    room_name = state_event.get("content", {}).get("name", "unnamed")
+                    break
+            # Fallback to direct name field
+            if room_name == "unnamed" and "name" in request_ctx.body_json:
+                room_name = request_ctx.body_json["name"]
+
+        is_direct = (
+            request_ctx.body_json.get("is_direct", False)
+            if request_ctx.body_json
+            else False
+        )
+        room_type = "DM" if is_direct else "room"
+
+        logger.info(f"Create {room_type}: name='{room_name}', user={user_id}")
+
+        headers = (
+            request_ctx.headers
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers)
+        )
+        headers.pop("content-length", None)
+
+        # Forward to homeserver (POST request with JSON body)
+        response = await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            json=request_ctx.body_json if request_ctx.body_json else None,
+            query_params=query_params,
+        )
+
+        # Extract room_id from response and store mapping
+        try:
+            # Parse response to get room_id
+            import json
+
+            response_body = response.body
+            if isinstance(response_body, bytes):
+                response_body = response_body.decode("utf-8")
+            response_data = json.loads(response_body) if response_body else {}
+
+            room_id = response_data.get("room_id")
+
+            if (
+                room_id
+                and request_ctx.bridge
+                and hasattr(request_ctx.bridge, "bridge_id")
+            ):
+                from ..database.repositories import RoomBridgeMappingRepository
+
+                try:
+                    RoomBridgeMappingRepository().upsert(
+                        room_id=room_id, bridge_id=request_ctx.bridge.bridge_id
+                    )
+                    logger.info(
+                        f"✓ Created {room_type} and stored mapping: room={room_id}, name='{room_name}'"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to store room-bridge mapping for {room_id}: {e}"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to parse createRoom response for mapping: {e}")
+
+        return response
+
+    @staticmethod
+    async def capabilities(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle GET /capabilities - Returns server capabilities
+        https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv3capabilities
+        """
+        logger.info("Get capabilities")
+
+        path = request_ctx.request.path_params.get("path")
+
+        query_params = (
+            request_ctx.query_params.copy()
+            if request_ctx and request_ctx.query_params is not None
+            else dict(request_ctx.request.query_params)
+        )
+
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
             query_params=query_params,
         )
 

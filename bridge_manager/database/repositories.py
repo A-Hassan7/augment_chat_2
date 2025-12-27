@@ -60,8 +60,13 @@ class BaseRepository(ABC):
 
 
 class BridgesRepository(BaseRepository):
+    """Repository for bridge database operations with caching."""
 
     model = Bridges
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._cache = {}
 
     def get_all(self):
         with self.Session() as session:
@@ -76,9 +81,16 @@ class BridgesRepository(BaseRepository):
             return session.execute(statement).scalars().all()
 
     def get_by_as_token(self, as_token: str):
+        cache_key = f"as_token:{as_token}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         with self.Session() as session:
             statement = select(self.model).where(self.model.as_token == as_token)
-            return session.execute(statement).scalar_one_or_none()
+            result = session.execute(statement).scalar_one_or_none()
+            if result:
+                self._cache[cache_key] = result
+            return result
 
     def get_by_owner_username_and_service(
         self, owner_matrix_username: str, bridge_service: str
@@ -93,11 +105,18 @@ class BridgesRepository(BaseRepository):
             return session.execute(statement).scalar_one_or_none()
 
     def get_by_orchestrator_id(self, orchestrator_id: str):
+        cache_key = f"orchestrator_id:{orchestrator_id}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         with self.Session() as session:
             statement = select(self.model).where(
                 self.model.orchestrator_id == orchestrator_id
             )
-            return session.execute(statement).scalar_one_or_none()
+            result = session.execute(statement).scalar_one_or_none()
+            if result:
+                self._cache[cache_key] = result
+            return result
 
 
 class HomeserversRepository(BaseRepository):
@@ -210,11 +229,14 @@ class RoomBridgeMappingRepository(BaseRepository):
             return session.execute(statement).scalars().all()
 
     def get_bridge_by_room_id(self, room_id: str):
-        """Get bridge_id associated with a room_id"""
+        """Get bridge_id associated with a room_id (uses indexed query)."""
         with self.Session() as session:
-            statement = select(self.model).where(self.model.room_id == room_id)
-            mapping = session.execute(statement).scalar_one_or_none()
-            return mapping.bridge_id if mapping else None
+            # Optimized: only select bridge_id instead of full object
+            statement = select(self.model.bridge_id).where(
+                self.model.room_id == room_id
+            )
+            result = session.execute(statement).scalar_one_or_none()
+            return result
 
     def upsert(self, room_id: str, bridge_id: int):
         """

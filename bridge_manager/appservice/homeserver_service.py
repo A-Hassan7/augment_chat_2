@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 import json
 import httpx
 import re
-import logging
 from fastapi import Response
 
 from fastapi.responses import JSONResponse
@@ -12,11 +11,12 @@ from fastapi.responses import JSONResponse
 from ..bridge_registry import BridgeRegistry
 from ..database.repositories import TransactionMappingsRepository
 from .route_registry import RouteRegistry, RouteNotFoundError
+from logger import Logger
 
 if TYPE_CHECKING:
     from .models import RequestContext
 
-logger = logging.getLogger(__name__)
+logger = Logger().get_logger(__name__)
 
 
 class HomeserverService:

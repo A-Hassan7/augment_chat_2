@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 import re
 import json
 import httpx
-import logging
 from typing import TYPE_CHECKING
 
 from fastapi import Request, Response
@@ -17,11 +16,12 @@ from ..database.repositories import (
 )
 from .route_registry import RouteRegistry, RouteNotFoundError
 from .common_handlers import MatrixClientAPIHandlers, AppserviceAPIHandlers
+from logger import Logger
 
 if TYPE_CHECKING:
     from .models import RequestContext
 
-logger = logging.getLogger(__name__)
+logger = Logger().get_logger(__name__)
 
 # the homeserver needs to create a user for each specific service
 # the username will have to be part of the namespace i.e. _bridge_manager__whatsapp_1__
@@ -239,14 +239,14 @@ class WhatsappBridgeService(BridgeService):
             "Appservice ping",
         )
         self.routes.add_regex(
-            rf"_matrix/client/v3/profile/@\w+:{re.escape(self.homeserver_name)}/avatar_url",
+            rf"_matrix/client/v3/profile/@[^:]+:{re.escape(self.homeserver_name)}/avatar_url",
             lambda ctx: MatrixClientAPIHandlers.profile_avatar_url(
                 ctx, self.homeserver
             ),
             "User avatar URL",
         )
         self.routes.add_regex(
-            rf"_matrix/client/v3/profile/@\w+:{re.escape(self.homeserver_name)}/displayname",
+            rf"_matrix/client/v3/profile/@[^:]+:{re.escape(self.homeserver_name)}/displayname",
             lambda ctx: MatrixClientAPIHandlers.profile_displayname(
                 ctx, self.homeserver
             ),
@@ -279,6 +279,11 @@ class WhatsappBridgeService(BridgeService):
             "Room state retrieval",
         )
         self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/state/[^/]+(?:/.*)?$",
+            lambda ctx: MatrixClientAPIHandlers.room_state_event(ctx, self.homeserver),
+            "Get specific room state event",
+        )
+        self.routes.add_regex(
             r"_matrix/client/v3/rooms/[^/]+/members",
             lambda ctx: MatrixClientAPIHandlers.room_members(ctx, self.homeserver),
             "Room members list",
@@ -289,6 +294,41 @@ class WhatsappBridgeService(BridgeService):
             r"_matrix/client/v3/rooms/[^/]+/send/[^/]+/.+",
             lambda ctx: MatrixClientAPIHandlers.room_send_event(ctx, self.homeserver),
             "Send room event (messages, reactions, etc.)",
+        )
+
+        # Room creation endpoint
+        self.routes.add_exact(
+            "_matrix/client/v3/createRoom",
+            lambda ctx: MatrixClientAPIHandlers.room_create(ctx, self.homeserver),
+            "Create new room",
+        )
+
+        # Server capabilities endpoint
+        self.routes.add_exact(
+            "_matrix/client/v3/capabilities",
+            lambda ctx: MatrixClientAPIHandlers.capabilities(ctx, self.homeserver),
+            "Get server capabilities",
+        )
+
+        # Room invite endpoint
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/invite$",
+            lambda ctx: MatrixClientAPIHandlers.room_invite(ctx, self.homeserver),
+            "Invite user to room",
+        )
+
+        # Room join endpoint
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/join$",
+            lambda ctx: MatrixClientAPIHandlers.room_join(ctx, self.homeserver),
+            "Join room",
+        )
+
+        # Room members endpoint
+        self.routes.add_regex(
+            r"_matrix/client/v3/rooms/[^/]+/members$",
+            lambda ctx: MatrixClientAPIHandlers.room_members(ctx, self.homeserver),
+            "Get room members",
         )
 
     async def whoami(self, request_ctx: RequestContext) -> Response:

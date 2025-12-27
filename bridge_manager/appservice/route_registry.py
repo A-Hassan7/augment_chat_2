@@ -7,16 +7,16 @@ with support for exact matches, regex patterns, and fallback handlers.
 
 from __future__ import annotations
 import re
-import logging
 from typing import Callable, Optional, List, Tuple, Dict, Any, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
+from logger import Logger
 
 if TYPE_CHECKING:
     from .models import RequestContext
     from fastapi import Response
 
-logger = logging.getLogger(__name__)
+logger = Logger().get_logger(__name__)
 
 
 class RouteMatchType(Enum):
