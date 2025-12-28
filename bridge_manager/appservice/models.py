@@ -16,7 +16,7 @@ from ..database.repositories import (
     HomeserversRepository,
     RequestsRepository,
 )
-from .bridge_resolver import BridgeResolver, BridgeResolutionMethod, BridgeNotFoundError
+from .bridge_resolver import BridgeResolver, BridgeResolutionMethod
 
 if TYPE_CHECKING:
     from .bridge_service import BridgeService
@@ -69,8 +69,8 @@ class RequestContext:
         self.query_params = query_params
         self.transaction_id = transaction_id
 
-        # Request ID will be set by log_inbound_request() when called from create()
-        self.request_id = None
+        request_model = self.log_inbound_request()
+        self.request_id = request_model.id
 
     @classmethod
     async def create(
@@ -95,35 +95,16 @@ class RequestContext:
         except ValueError:
             raise ValueError("source must be either 'homeserver' or 'bridge'")
 
-        # Initialize with None - will be populated if discovery succeeds
-        bridge = None
-        bridge_discovery_method = None
-        homeserver = None
-        discovery_error = None
+        # Use BridgeResolver to discover bridge
+        resolver = BridgeResolver(bridge_manager_config)
+        bridge, bridge_discovery_method = resolver.resolve(
+            source=source_enum,
+            headers=headers,
+            path=path,
+            body_json=body_json,
+        )
 
-        # Try to discover bridge - don't fail if it's not found, just log it
-        try:
-            resolver = BridgeResolver(bridge_manager_config)
-            bridge, bridge_discovery_method = resolver.resolve(
-                source=source_enum,
-                headers=headers,
-                path=path,
-                body_json=body_json,
-                query_params=query_params,
-            )
-        except Exception as e:
-            discovery_error = f"Bridge discovery failed: {str(e)}"
-
-        # Try to discover homeserver - don't fail if it's not found, just log it
-        try:
-            homeserver = cls.discover_homeserver(
-                headers=headers, source_enum=source_enum
-            )
-        except Exception as e:
-            if discovery_error:
-                discovery_error += f" | Homeserver discovery failed: {str(e)}"
-            else:
-                discovery_error = f"Homeserver discovery failed: {str(e)}"
+        homeserver = cls.discover_homeserver(headers=headers, source_enum=source_enum)
 
         # create instance of the request context
         inst = cls(
@@ -138,56 +119,37 @@ class RequestContext:
             query_params=query_params,
         )
 
-        # Log the inbound request - this MUST happen for all requests
-        request_model = inst.log_inbound_request(discovery_error=discovery_error)
-        inst.request_id = request_model.id
-
-        # Now raise the error if discovery failed (after logging)
-        if discovery_error:
-            if bridge is None:
-                raise BridgeNotFoundError(discovery_error)
-            elif homeserver is None:
-                raise ValueError(discovery_error)
-
         return inst
 
-    def log_inbound_request(self, discovery_error: Optional[str] = None):
+    def log_inbound_request(self):
         """
         Serialize request to be stored in the database. Only keeping the important bits to keep lean.
 
-        This method logs ALL requests, even if bridge or homeserver discovery fails.
-        Bridge and homeserver IDs are optional and only logged if discovery succeeded.
+        Keeps:
+            -
 
         Args:
-            discovery_error: Optional error message if bridge/homeserver discovery failed
+            request (Request): Original request
         """
         requests_repo = RequestsRepository()
 
-        # Build request data (discovery error is now a separate column)
-        request_data = {
-            "method": self.request.method,
-            "url": self.request.url._url,
-            "path": self.request.path_params.get("path", ""),
-            "query_params": self.query_params,
-            "headers": self.headers,
-            "body_json": self.body_json,
-        }
-
-        data = json.dumps(request_data)
+        data = json.dumps(
+            {
+                "method": self.request.method,
+                "url": self.request.url._url,
+                "path": self.request.path_params.get("path", ""),
+                "query_params": self.query_params,
+                "headers": self.headers,
+                "body_json": self.body_json,
+            }
+        )
 
         # create a request record in the database
-        # bridge_id, homeserver_id, bridge_discovery_method, and discovery_error are optional
         request_model = requests_repo.create(
             inbound_at=datetime.now(timezone.utc),
             source=self.source.value,
-            bridge_id=self.bridge.bridge_id if self.bridge else None,
-            homeserver_id=self.homeserver.id if self.homeserver else None,
-            bridge_discovery_method=(
-                self.bridge_discovery_method.value
-                if self.bridge_discovery_method
-                else None
-            ),
-            discovery_error=discovery_error,
+            bridge_id=self.bridge.bridge_id,
+            homeserver_id=self.homeserver.id,
             method=self.request.method,
             path=self.request.path_params.get("path", ""),
             inbound_request=data,
@@ -225,41 +187,29 @@ class RequestContext:
         )
 
     def log_response(self, response):
-        """
-        Log the response from either homeserver or bridge.
 
-        Supports both httpx.Response and FastAPI Response objects.
-        """
         requests_repo = RequestsRepository()
 
-        # Handle different response types
+        # Handle both httpx.Response and FastAPI JSONResponse objects
         if hasattr(response, "content"):
             # httpx.Response
-            content = (
-                response.content.decode("utf-8")
-                if isinstance(response.content, bytes)
-                else response.content
-            )
+            content = response.content.decode("utf-8")
+            content = json.loads(content) if content else None
+            status_code = response.status_code
         elif hasattr(response, "body"):
-            # FastAPI Response
-            content = (
-                response.body.decode("utf-8")
-                if isinstance(response.body, bytes)
-                else response.body
-            )
+            # FastAPI JSONResponse
+            body = response.body
+            content = json.loads(body.decode("utf-8")) if body else None
+            status_code = response.status_code
         else:
-            content = str(response)
+            # Unknown response type, try to extract what we can
+            content = None
+            status_code = getattr(response, "status_code", None)
 
-        try:
-            content_json = json.loads(content) if content else None
-        except (json.JSONDecodeError, TypeError):
-            # If not JSON, store as string
-            content_json = content
-
-        data = json.dumps(content_json)
+        data = json.dumps(content) if content else None
 
         requests_repo.update(
-            id_=self.request_id, response=data, response_status=response.status_code
+            id_=self.request_id, response=data, response_status=status_code
         )
 
     @classmethod
@@ -389,14 +339,14 @@ class RequestContext:
                             obj[k] = self.translate_username(v, to=to)
 
                     else:
-                        obj[k] = replace(v, to)
+                        obj[k] = replace(v)
 
                 return obj
 
             elif isinstance(obj, list):
-                return [replace(i, to) for i in obj]
+                return [replace(i) for i in obj]
 
             else:
                 return obj
 
-        return replace(self.body_json.copy(), to)
+        return replace(self.body_json.copy())

@@ -196,6 +196,39 @@ class MatrixClientAPIHandlers:
         )
 
     @staticmethod
+    async def profile(
+        request_ctx: RequestContext, homeserver: HomeserverService
+    ) -> Response:
+        """
+        Handle /_matrix/client/v3/profile/{userId} endpoint.
+
+        Get the combined profile information (displayname and avatar_url) for a user.
+        Returns: {"displayname": "...", "avatar_url": "..."}
+        """
+        path = request_ctx.request.path_params.get("path")
+
+        query_params = (
+            request_ctx.query_params.copy()
+            if request_ctx and request_ctx.query_params is not None
+            else dict(request_ctx.request.query_params)
+        )
+
+        headers = (
+            request_ctx.headers.copy()
+            if request_ctx and request_ctx.headers is not None
+            else dict(request_ctx.request.headers).copy()
+        )
+        headers.pop("content-length", None)
+
+        return await homeserver.send_request(
+            request_ctx=request_ctx,
+            method=request_ctx.request.method,
+            path=path,
+            headers=headers,
+            query_params=query_params,
+        )
+
+    @staticmethod
     async def sync(
         request_ctx: RequestContext, homeserver: HomeserverService
     ) -> Response:
@@ -431,26 +464,30 @@ class MatrixClientAPIHandlers:
         request_ctx: RequestContext, homeserver: HomeserverService
     ) -> Response:
         """
-        Handle GET /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey} endpoint.
+        Handle GET/PUT /_matrix/client/v3/rooms/{roomId}/state/{eventType}/{stateKey} endpoint.
 
-        Get a specific state event from a room (e.g., m.room.power_levels).
+        GET: Get a specific state event from a room (e.g., m.room.power_levels).
+        PUT: Set a specific state event in a room (e.g., send invite by setting m.room.member).
 
         Per Matrix spec:
-        - Returns the content of the specified state event
-        - eventType: The type of state to look up (e.g., m.room.power_levels)
-        - stateKey: The state_key of the event (often empty string "")
+        - GET: Returns the content of the specified state event
+        - PUT: Sets the state event and returns {"event_id": "..."}
+        - eventType: The type of state (e.g., m.room.power_levels, m.room.member)
+        - stateKey: The state_key of the event (often empty string "", or user ID for membership)
         - User must have access to the room
         - Supports user_id query parameter for AS impersonation
 
         Flow:
-        1. Bridge sends GET /rooms/{roomId}/state/{eventType}/{stateKey}?user_id={bridged_user}
+        1. Bridge sends GET/PUT /rooms/{roomId}/state/{eventType}/{stateKey}?user_id={user}
         2. Bridge Manager forwards to homeserver with proper authentication
-        3. Homeserver returns the state event content
+        3. Homeserver returns state content (GET) or event_id (PUT)
         4. Bridge Manager passes response back to bridge
         """
         import re
+        import json
 
         path = request_ctx.request.path_params.get("path")
+        method = request_ctx.request.method
 
         # Extract room_id and event_type from path for logging
         match = re.search(r"/rooms/([^/]+)/state/([^/]+)(?:/(.*))?$", path)
@@ -471,10 +508,10 @@ class MatrixClientAPIHandlers:
         # Extract user_id from query params for logging
         user_id = query_params.get("user_id", "not specified")
         logger.info(
-            f"Room state event: room={room_id}, type={event_type}, key='{state_key}', user={user_id}"
+            f"Room state event ({method}): room={room_id}, type={event_type}, key='{state_key}', user={user_id}"
         )
 
-        # Prepare headers and remove content-length for GET requests
+        # Prepare headers and remove content-length
         headers = (
             request_ctx.headers.copy()
             if request_ctx and request_ctx.headers is not None
@@ -482,13 +519,20 @@ class MatrixClientAPIHandlers:
         )
         headers.pop("content-length", None)
 
-        # Forward to homeserver (GET request, no body)
+        # Prepare body for PUT requests
+        body_json = None
+        if method in ["PUT", "POST"]:
+            body_json = request_ctx.body_json if request_ctx else None
+            logger.info(f"State event body: {body_json}")
+
+        # Forward to homeserver
         return await homeserver.send_request(
             request_ctx=request_ctx,
-            method=request_ctx.request.method,
+            method=method,
             path=path,
             headers=headers,
             query_params=query_params,
+            json=body_json,  # Use json parameter for proper JSON serialization
         )
 
     @staticmethod

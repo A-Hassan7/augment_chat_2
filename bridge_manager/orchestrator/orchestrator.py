@@ -148,11 +148,9 @@ class BridgeOrchestrator:
             },
             # network_mode="host",
             restart_policy={"Name": "unless-stopped"},
-            volumes=["wa_data:/data"],
+            volumes={bridge.CONTAINER_NAME: {"bind": "/data", "mode": "rw"}},
+            entrypoint=["/usr/bin/mautrix-whatsapp", "-c", "/data/config.yaml"],
         )
-
-        # start container so it can run it's initial script (they auto stop as a result of this initial script)
-        container.start()
 
         # create a new bridge config and save it so I can later copy to the container
         config_file_path = self.create_bridge_config(bridge)

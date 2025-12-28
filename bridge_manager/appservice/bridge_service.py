@@ -252,6 +252,11 @@ class WhatsappBridgeService(BridgeService):
             ),
             "User display name",
         )
+        self.routes.add_regex(
+            rf"_matrix/client/v3/profile/@[^:]+:{re.escape(self.homeserver_name)}$",
+            lambda ctx: MatrixClientAPIHandlers.profile(ctx, self.homeserver),
+            "User full profile",
+        )
 
         # Media endpoints
         self.routes.add_regex(
