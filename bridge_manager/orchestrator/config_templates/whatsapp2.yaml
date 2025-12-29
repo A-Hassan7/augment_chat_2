@@ -343,7 +343,7 @@ appservice:
         username: [[ bot_username ]]
         # Display name and avatar for bot. Set to "remove" to remove display name/avatar, leave empty
         # to leave display name/avatar as-is.
-        displayname: WhatsApp bridge bot
+        displayname: WhatsApp bridge bot [[appservice_id ]]
         avatar: mxc://maunium.net/NeXNQarUbrlYBiPCpprYsRqr
 
     # Whether to receive ephemeral events via appservice transactions.
@@ -458,16 +458,16 @@ backfill:
     # Whether to do backfilling at all.
     enabled: true
     # Maximum number of messages to backfill in empty rooms.
-    max_initial_messages: -1
+    max_initial_messages: 1000000
     # Maximum number of missed messages to backfill after bridge restarts.
-    max_catchup_messages: -1
+    max_catchup_messages: 1000000
     # If a backfilled chat is older than this number of hours,
     # mark it as read even if it's unread on the remote network.
-    unread_hours_threshold: -1
+    unread_hours_threshold: 1000000
     # Settings for backfilling threads within other backfills.
     threads:
         # Maximum number of messages to backfill in a new thread.
-        max_initial_messages: -1
+        max_initial_messages: 1000000
     # Settings for the backwards backfill queue. This only applies when connecting to
     # Beeper as standard Matrix servers don't support inserting messages into history.
     queue:
