@@ -214,16 +214,19 @@ async function loadInitial() {
 function buildFilters() {
   const source = qs('#filter-source').value.trim();
   const method = qs('#filter-method').value.trim();
+  const status = qs('#filter-status').value.trim();
   const homeserver_id = qs('#filter-hs').value.trim();
   const bridge_id = qs('#filter-bridge').value.trim();
   const limit = qs('#filter-limit').value.trim();
   const sinceRaw = qs('#filter-since').value;
   const since = sinceRaw ? new Date(sinceRaw).toISOString() : '';
-  return { source, method, homeserver_id, bridge_id, limit, since };
+  return { source, method, status, homeserver_id, bridge_id, limit, since };
 }
 
 function clearFilters() {
   qsa('.filters input').forEach(i => i.value = i.type === 'number' ? '' : '');
+  const statusSelect = qs('#filter-status');
+  if (statusSelect) statusSelect.value = '';
 }
 
 document.addEventListener('click', async (e) => {
@@ -317,6 +320,62 @@ window.addEventListener('mousemove', (e) => {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadInitial();
+
+  // Auto-refresh state
+  let autoRefreshInterval = null;
+  let autoRefreshEnabled = false;
+
+  function refreshData() {
+    const filters = buildFilters();
+    fetchRequests(filters)
+      .then(rows => renderRows(rows))
+      .catch(e => {
+        console.error('Auto-refresh failed:', e);
+      });
+  }
+
+  function startAutoRefresh() {
+    if (autoRefreshInterval) return;
+    autoRefreshInterval = setInterval(refreshData, 5000);
+    autoRefreshEnabled = true;
+    const btn = qs('#toggle-refresh');
+    if (btn) btn.textContent = 'Auto-Refresh: ON';
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+    }
+    autoRefreshEnabled = false;
+    const btn = qs('#toggle-refresh');
+    if (btn) btn.textContent = 'Auto-Refresh: OFF';
+  }
+
+  // Toggle auto-refresh
+  const refreshBtn = qs('#toggle-refresh');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      if (autoRefreshEnabled) {
+        stopAutoRefresh();
+      } else {
+        startAutoRefresh();
+      }
+    });
+  }
+
+  // Pause auto-refresh when page is hidden, resume when visible
+  let wasAutoRefreshEnabled = false;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && autoRefreshEnabled) {
+      wasAutoRefreshEnabled = true;
+      stopAutoRefresh();
+    } else if (!document.hidden && wasAutoRefreshEnabled) {
+      wasAutoRefreshEnabled = false;
+      startAutoRefresh();
+    }
+  });
+
   qs('#apply-filters').addEventListener('click', async () => {
     qs('#requests-body').innerHTML = '<tr><td colspan="9" class="loading">Loading…</td></tr>';
     const filters = buildFilters();

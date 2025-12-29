@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard - Bridge Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 16px;
+      padding: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .chart-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 300px;
+    }
+    .chart-card h3 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .chart-container {
+      position: relative;
+      height: 280px;
+    }
+    .chart-card.wide {
+      grid-column: 1 / -1;
+    }
+    .chart-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .chart-controls button {
+      padding: 4px 10px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .15s ease;
+    }
+    .chart-controls button:hover {
+      background: var(--table-row-hover);
+    }
+    .chart-controls button.active {
+      background: #3b82f6;
+      color: white;
+      border-color: #3b82f6;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bridge Manager Dashboard</h1>
+    <div class="filters">
+      <button id="toggle-theme" class="secondary" title="Toggle theme">Toggle Theme</button>
+      <button onclick="location.href='/requests.html'" class="secondary">View Requests</button>
+      <button id="toggle-refresh" class="secondary" title="Auto-refresh every 30s">Auto-Refresh: OFF</button>
+      <label>Time Range:
+        <select id="global-time-filter">
+          <option value="1h">Last Hour</option>
+          <option value="24h" selected>Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="all">All Time</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <div class="dashboard-grid">
+      <!-- Time-series traffic -->
+      <div class="chart-card wide">
+        <h3>Request Traffic Over Time</h3>
+        <div class="chart-controls">
+          <button class="interval-btn active" data-interval="hour">Hour</button>
+          <button class="interval-btn" data-interval="minute">Minute</button>
+          <button class="interval-btn" data-interval="day">Day</button>
+        </div>
+        <div class="chart-container">
+          <canvas id="trafficChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Error rate timeline -->
+      <div class="chart-card wide">
+        <h3>Error Rate Over Time</h3>
+        <div class="chart-controls">
+          <button class="error-interval-btn active" data-interval="hour">Hour</button>
+          <button class="error-interval-btn" data-interval="minute">Minute</button>
+          <button class="error-interval-btn" data-interval="day">Day</button>
+        </div>
+        <div class="chart-container">
+          <canvas id="errorChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Status breakdown -->
+      <div class="chart-card">
+        <h3>Requests by Status Code</h3>
+        <div class="chart-container">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Source split -->
+      <div class="chart-card">
+        <h3>Requests by Source</h3>
+        <div class="chart-container">
+          <canvas id="sourceChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Method distribution -->
+      <div class="chart-card">
+        <h3>Requests by Method</h3>
+        <div class="chart-container">
+          <canvas id="methodChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Top paths -->
+      <div class="chart-card">
+        <h3>Top 10 Paths</h3>
+        <div class="chart-container">
+          <canvas id="pathsChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

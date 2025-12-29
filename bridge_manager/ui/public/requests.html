@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bridge Manager Requests</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Bridge Manager Requests</h1>
+    <div class="filters">
+      <button id="toggle-theme" class="secondary" title="Toggle theme">Toggle Theme</button>
+      <button onclick="location.href='/dashboard.html'" class="secondary">Dashboard</button>
+      <button id="toggle-refresh" class="secondary" title="Auto-refresh every 5s">Auto-Refresh: OFF</button>
+      <label>Source <input id="filter-source" placeholder="hs|bridge" /></label>
+      <label>Method <input id="filter-method" placeholder="GET|POST|PUT" /></label>
+      <label>Status
+        <select id="filter-status">
+          <option value="">All</option>
+          <option value="200">200 (success)</option>
+          <option value="non-200">Non-200 (errors/warnings)</option>
+        </select>
+      </label>
+      <label>Homeserver ID <input id="filter-hs" type="number" /></label>
+      <label>Bridge ID <input id="filter-bridge" type="number" /></label>
+      <label>Since <input id="filter-since" type="datetime-local" /></label>
+      <label>Limit <input id="filter-limit" type="number" value="100" /></label>
+      <button id="apply-filters">Apply</button>
+      <button id="clear-filters" class="secondary">Clear</button>
+    </div>
+  </header>
+
+  <main class="layout layout-vertical">
+    <section class="table-section">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Source</th>
+            <th>Homeserver ID</th>
+            <th>Bridge ID</th>
+            <th>Method</th>
+            <th>Status</th>
+            <th>Path</th>
+            <th>Inbound At</th>
+            <th>Outbound At</th>
+            <th>Response At</th>
+          </tr>
+        </thead>
+        <tbody id="requests-body">
+          <tr><td colspan="9" class="loading">Loading…</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div id="divider" class="divider divider-horizontal" role="separator" aria-orientation="horizontal" aria-label="Resize panel"></div>
+    <aside id="details" class="details details-bottom">
+      <h2>Request Details</h2>
+      <div id="details-content">
+        <p>Select a row to view details.</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <small>UI powered by plain JavaScript.</small>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
