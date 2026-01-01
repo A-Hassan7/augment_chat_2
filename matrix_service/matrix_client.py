@@ -58,19 +58,24 @@ class MatrixClient:
 
         # create request to matrix server
         client = self._create_client()
-        res = await client.register(username=username, password=random_password)
+        try:
+            res = await client.register(username=username, password=random_password)
 
-        # catch error
-        if not isinstance(res, RegisterResponse):
-            message = f"Registration failed for user {username}. Error: {res}"
-            self.logger.critical(message)
-            raise RegistrationError(message)
+            # catch error
+            if not isinstance(res, RegisterResponse):
+                message = f"Registration failed for user {username}. Error: {res}"
+                self.logger.critical(message)
+                raise RegistrationError(message)
 
-        self.logger.info(f"User {username} successfully registered")
+            self.logger.info(f"User {username} successfully registered")
+            self.logger.info(f"password: {random_password}")
 
-        self.logger.info(f"password: {random_password}")
-
-        return MatrixUser(username, password=random_password)
+            return MatrixUser(
+                self._create_full_user_id(username), password=random_password
+            )
+        finally:
+            # Always close the client to prevent unclosed connector warning
+            await client.close()
 
     async def login(self, username: str) -> MatrixUser:
         """

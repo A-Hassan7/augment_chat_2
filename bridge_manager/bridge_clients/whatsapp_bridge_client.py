@@ -22,7 +22,7 @@ from .errors import (
     LoginFailed,
 )
 from matrix_service.interface import MatrixServiceInterface
-from .config import BridgeManagerConfig
+from bridge_manager.config import BridgeManagerConfig
 
 
 class BaseBridgeClient:

@@ -278,12 +278,12 @@ class BridgeOrchestrator:
         return tar_stream.read()
 
 
-bridge_manager_config = BridgeManagerConfig()
-orchestrator = BridgeOrchestrator(bridge_manager_config)
+# bridge_manager_config = BridgeManagerConfig()
+# orchestrator = BridgeOrchestrator(bridge_manager_config)
 
-bridge_model = orchestrator.create_bridge(
-    bridge="whatsapp", owner_matrix_username="@admin:matrix.localhost.me"
-)
+# bridge_model = orchestrator.create_bridge(
+#     bridge="whatsapp", owner_matrix_username="@admin:matrix.localhost.me"
+# )
 
 # repo = BridgesRepository()
 # bridges = repo.get_all()

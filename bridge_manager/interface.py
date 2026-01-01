@@ -1,11 +1,23 @@
 import asyncio
 
-from .whatsapp_bridge_client import WhatsappBridgeClient
+from .config import BridgeManagerConfig
+from .orchestrator.orchestrator import BridgeOrchestrator
+from .bridge_clients.whatsapp_bridge_client import WhatsappBridgeClient
+
 
 class BridgeManagerInterface:
 
     def __init__(self):
         self.whatsapp_client = WhatsappBridgeClient()
+        self.bridge_orchestrator = BridgeOrchestrator(BridgeManagerConfig())
+
+    def create_bridge(self, matrix_username, service):
+
+        bridge_model = self.bridge_orchestrator.create_bridge(
+            bridge=service, owner_matrix_username=matrix_username
+        )
+
+        return bridge_model
 
     def whatsapp_register_user(self, matrix_username):
         """

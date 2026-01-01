@@ -1,7 +1,7 @@
 from sqlalchemy.engine import URL
 from sqlalchemy import create_engine
 
-from users_service.config import DatabaseConfig
+from users_service_old.config import DatabaseConfig
 
 
 class DatabaseEngine:
