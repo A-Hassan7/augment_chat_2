@@ -72,3 +72,8 @@ class BridgeRegistry:
             )
 
         return None
+
+    def list_bridges_by_owner(self, matrix_username):
+
+        bridges = self.bridges_repository.get_by_owner_username(matrix_username)
+        return bridges

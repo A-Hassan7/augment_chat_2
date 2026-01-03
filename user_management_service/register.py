@@ -117,3 +117,15 @@ class UserRegister:
                 f"Failed to register Matrix user for user_id {user_id}: {str(e)}"
             )
             raise
+
+    def get_user_by_matrix_username(self, matrix_username: str):
+        """
+        Retrieve a user by their Matrix username.
+
+        Args:
+            matrix_username: The Matrix username to search for
+
+        Returns:
+            User object if found, None otherwise
+        """
+        return self.users_repo.get_by_matrix_username(matrix_username)

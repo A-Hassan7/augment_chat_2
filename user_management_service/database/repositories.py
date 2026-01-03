@@ -42,6 +42,13 @@ class UsersRepository(BaseRepository):
             statement = select(self.model).where(self.model.username == username)
             return session.execute(statement).scalar()
 
+    def get_by_matrix_username(self, matrix_username: str):
+        with self.Session() as session:
+            statement = select(self.model).where(
+                self.model.matrix_username == matrix_username
+            )
+            return session.execute(statement).scalar()
+
     def create(self, user: User):
         with self.Session() as session:
             session.add(user)

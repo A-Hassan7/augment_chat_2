@@ -44,6 +44,7 @@ class Bridges(Base):
     ip = Column(Text, nullable=False)
     port = Column(Text, nullable=False)
     owner_matrix_username = Column(Text, nullable=False)
+    bridge_management_room_id = Column(Text, nullable=True)
     live_status = Column(Text, nullable=True)
     ready_status = Column(Text, nullable=True)
     status_updated_at = Column(

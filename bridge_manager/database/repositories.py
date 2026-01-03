@@ -104,6 +104,13 @@ class BridgesRepository(BaseRepository):
             )
             return session.execute(statement).scalar_one_or_none()
 
+    def get_by_owner_username(self, owner_matrix_username: str):
+        with self.Session() as session:
+            statement = select(self.model).where(
+                self.model.owner_matrix_username == owner_matrix_username,
+            )
+            return session.execute(statement).scalars().all()
+
     def get_by_orchestrator_id(self, orchestrator_id: str):
         cache_key = f"orchestrator_id:{orchestrator_id}"
         if cache_key in self._cache:
