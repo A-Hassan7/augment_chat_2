@@ -1,5 +1,12 @@
+from datetime import datetime, timezone
+
 from .config import BridgeManagerConfig
-from .database.repositories import BridgesRepository
+from .database.repositories import (
+    BridgesRepository,
+    RequestsRepository,
+    TransactionMappingsRepository,
+    RoomBridgeMappingRepository,
+)
 from .database.models import Bridges
 
 
@@ -17,6 +24,8 @@ class BridgeRegistry:
         self,
         orchestrator_id,
         bridge_service,
+        container_id,
+        volume_name,
         matrix_bot_username,
         as_token,
         hs_token,
@@ -28,6 +37,8 @@ class BridgeRegistry:
         return self.bridges_repository.create(
             orchestrator_id=orchestrator_id,
             bridge_service=bridge_service,
+            container_id=container_id,
+            volume_name=volume_name,
             matrix_bot_username=matrix_bot_username,
             as_token=as_token,
             hs_token=hs_token,
@@ -76,4 +87,28 @@ class BridgeRegistry:
     def list_bridges_by_owner(self, matrix_username):
 
         bridges = self.bridges_repository.get_by_owner_username(matrix_username)
+
         return bridges
+
+    def soft_delete_bridge(self, bridge_id):
+        """
+        Soft delete a bridge by setting deleted_at timestamp.
+        Also hard deletes related records from requests, transaction mappings, and room mappings.
+
+        Args:
+            bridge_id: The database ID of the bridge to delete
+        """
+
+        # Soft delete the bridge
+        self.bridges_repository.update(
+            id_=bridge_id, deleted_at=datetime.now(timezone.utc)
+        )
+
+        # Hard delete related records using repository methods
+        requests_repo = RequestsRepository()
+        transactions_repo = TransactionMappingsRepository()
+        room_mappings_repo = RoomBridgeMappingRepository()
+
+        requests_repo.delete_by_bridge_id(bridge_id)
+        transactions_repo.delete_by_bridge_id(bridge_id)
+        room_mappings_repo.delete_by_bridge_id(bridge_id)

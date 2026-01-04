@@ -138,6 +138,7 @@ class BridgeOrchestrator:
 
         # Create the container (without running it)
         # I need to copy the config file into the container before running it
+        volume_name = bridge.CONTAINER_NAME
         container = self.docker_client.containers.create(
             image=bridge.DOCKER_IMAGE,
             name=bridge.CONTAINER_NAME,
@@ -148,7 +149,7 @@ class BridgeOrchestrator:
             },
             # network_mode="host",
             restart_policy={"Name": "unless-stopped"},
-            volumes={bridge.CONTAINER_NAME: {"bind": "/data", "mode": "rw"}},
+            volumes={volume_name: {"bind": "/data", "mode": "rw"}},
             entrypoint=["/usr/bin/mautrix-whatsapp", "-c", "/data/config.yaml"],
         )
 
@@ -168,6 +169,8 @@ class BridgeOrchestrator:
         bridge_model = self.bridge_registry.register_bridge(
             orchestrator_id=bridge.ORCHESTRATOR_ID,
             bridge_service=bridge.SERVICE,
+            container_id=container.id,
+            volume_name=volume_name,
             matrix_bot_username=bridge.MATRIX_BOT_USERNAME,
             as_token=bridge.AS_TOKEN,
             hs_token=bridge.HS_TOKEN,
@@ -248,6 +251,30 @@ class BridgeOrchestrator:
             ready_status=ready_status,
             status_updated_at=datetime.now(timezone.utc),
         )
+
+    def delete_bridge(self, bridge_model: Bridges):
+        """Delete the container and volume"""
+        try:
+            # Stop and remove the container
+            container = self.docker_client.containers.get(bridge_model.container_id)
+            container.stop()
+            container.remove()
+        except docker.errors.NotFound:
+            pass  # Container already removed
+        except docker.errors.APIError as e:
+            print(f"Error removing container: {e}")
+
+        try:
+            # Remove the volume
+            volume = self.docker_client.volumes.get(bridge_model.volume_name)
+            volume.remove()
+        except docker.errors.NotFound:
+            pass  # Volume already removed
+        except docker.errors.APIError as e:
+            print(f"Error removing volume: {e}")
+
+        # Delete the bridge from the database
+        self.bridge_registry.soft_delete_bridge(bridge_id=bridge_model.id)
 
     def _get_homeserver(self):
         homeservers = HomeserversRepository().get_all()

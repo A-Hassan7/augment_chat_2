@@ -150,6 +150,17 @@ class RequestsRepository(BaseRepository):
             statement = select(self.model)
             return session.execute(statement).scalars().all()
 
+    def delete_by_bridge_id(self, bridge_id: int):
+        """Delete all request records for a specific bridge."""
+        with self.Session() as session:
+            deleted_count = (
+                session.query(self.model)
+                .filter(self.model.bridge_id == bridge_id)
+                .delete()
+            )
+            session.commit()
+            return deleted_count
+
 
 # class BridgeUserRegistrationsRepository(BaseRepository):
 
@@ -226,6 +237,17 @@ class TransactionMappingsRepository(BaseRepository):
                 session.refresh(obj)
                 return obj
 
+    def delete_by_bridge_id(self, bridge_id: int):
+        """Delete all transaction mappings for a specific bridge."""
+        with self.Session() as session:
+            deleted_count = (
+                session.query(self.model)
+                .filter(self.model.bridge_id == bridge_id)
+                .delete()
+            )
+            session.commit()
+            return deleted_count
+
 
 class RoomBridgeMappingRepository(BaseRepository):
     model = RoomBridgeMapping
@@ -269,3 +291,14 @@ class RoomBridgeMappingRepository(BaseRepository):
                 session.commit()
                 session.refresh(obj)
                 return obj
+
+    def delete_by_bridge_id(self, bridge_id: int):
+        """Delete all room-bridge mappings for a specific bridge."""
+        with self.Session() as session:
+            deleted_count = (
+                session.query(self.model)
+                .filter(self.model.bridge_id == bridge_id)
+                .delete()
+            )
+            session.commit()
+            return deleted_count

@@ -1,3 +1,8 @@
+from .database.models import User
+from .register import UserRegister
+from .bridge_manager import UserBridgeManager
+
+
 class UsersManager:
     """
     Centralize user management and orchestration.
@@ -40,12 +45,23 @@ class UsersManager:
     """
 
     def __init__(self):
+        self.user_register = UserRegister()
+        self.user_bridge_manager = UserBridgeManager()
 
         pass
 
     # ============================================================
     # Onboarding
+    #
+    # 1. Augment chat and matrix user
+    # 2. Register a bridge
     # ============================================================
-
     def create_user(self, username):
-        pass
+        return self.user_register.register(username)
+
+    def register_bridge(self, user: User, service):
+        bridge = self.user_bridge_manager.create_bridge(user, service)
+        login_code = self.user_bridge_manager.login(user, bridge)
+
+    def list_bridges(self, user: User, service):
+        return self.user_bridge_manager.list_bridges(user)

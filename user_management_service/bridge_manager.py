@@ -11,6 +11,7 @@ from .errors import (
     InvalidBridgeServiceError,
 )
 from logger import Logger
+import time
 
 
 class BridgeService(Enum):
@@ -134,28 +135,39 @@ class UserBridgeManager:
             f"{bridge.orchestrator_id} ({bridge.bridge_service})"
         )
 
-        try:
-            login_code = self.bridge_manager.login(
-                bridge=bridge, phone_number=phone_number
-            )
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                login_code = self.bridge_manager.login(
+                    bridge=bridge, phone_number=phone_number
+                )
 
-            self.logger.info(
-                f"Login request created for user {user.username} on bridge {bridge.orchestrator_id} with login code {login_code}"
-            )
+                self.logger.info(
+                    f"Login request created for user {user.username} on bridge "
+                    f"{bridge.orchestrator_id} with login code {login_code}"
+                )
 
-            return login_code
+                return login_code
 
-        except Exception as e:
-            self.logger.error(
-                f"Login failed for user {user.username} on bridge "
-                f"{bridge.orchestrator_id}: {str(e)}"
-            )
-            raise BridgeLoginError(f"Bridge login failed: {str(e)}")
-
-    def get_bridge_status(self, user: User, bridge: Bridges):
-        """Get the current status of a bridge."""
-        pass
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.logger.warning(
+                        f"Login failed for user {user.username} on bridge "
+                        f"{bridge.orchestrator_id}: {str(e)}. Retrying after 2 seconds..."
+                    )
+                    time.sleep(2)
+                else:
+                    self.logger.error(
+                        f"Login failed for user {user.username} on bridge "
+                        f"{bridge.orchestrator_id} after {max_retries} attempts: {str(e)}"
+                    )
+                    raise BridgeLoginError(f"Bridge login failed: {str(e)}")
 
     def delete_bridge(self, user: User, bridge: Bridges):
-        """Delete a bridge and stop the container."""
-        pass
+        """Delete the bridge and the volume"""
+
+        # Verify ownership
+        if bridge.owner_matrix_username != user.matrix_username:
+            raise BridgeAccessDeniedError("User must be the owner of the bridge")
+
+        self.bridge_manager.delete_bridge(bridge=bridge)

@@ -38,6 +38,8 @@ class Bridges(Base):
         Text, nullable=False, unique=True
     )  # UUID assigned by orchestrator
     bridge_service = Column(Text, nullable=False)  # (whatsapp/discord etc.)
+    container_id = Column(Text, nullable=False)
+    volume_name = Column(Text, nullable=False)
     matrix_bot_username = Column(Text, unique=True)
     as_token = Column(Text, nullable=False)
     hs_token = Column(Text, nullable=True)
