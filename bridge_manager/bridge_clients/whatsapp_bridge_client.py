@@ -134,7 +134,7 @@ class WhatsappBridgeClient(BaseBridgeClient):
             response.message_body for response in message_responses
         ]
         raise LoginFailed(
-            f"Login failed for user {mx_username} with phone number {phone_number}. "
+            f"Login failed for user {self.bridge.owner_matrix_username} with phone number {phone_number}. "
             "The following messages were returned from the whatsapp bot: "
             f"{response_message_bodies}"
         )
