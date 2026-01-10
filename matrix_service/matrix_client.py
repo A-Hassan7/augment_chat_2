@@ -181,7 +181,10 @@ class MatrixClient:
         room_memberships = local_current_membership_repository.get_by_room_id(
             full_room_id
         )
-        registered_members = [membership.user_id for membership in room_memberships]
+        registered_members = [
+            membership.user_id.split(":")[0].replace("@", "")
+            for membership in room_memberships
+        ]
         if not mx_username in registered_members:
             raise AuthorizationError(
                 f"User {mx_username} is not a registered member of this room {room_id}"
@@ -320,18 +323,22 @@ class MatrixClient:
         Create the full matrix user id including the matrix homeserver name
 
         Args:
-            username (str): username
+            username (str): username (either bare username or full @username:homeserver format)
+
+        Returns:
+            str: Full Matrix user ID in format @username:homeserver
         """
 
         # Check if username is already a full user ID (e.g., @username:homeserver.name)
         if re.match(r"^@[^:]+:.+$", username):
-            # Extract homeserver from username and verify it matches
-            if username.split(":")[1] == self.config.MATRIX_HOMESERVER_NAME:
-                return username
-            else:
-                # If homeserver doesn't match, reconstruct with correct homeserver
-                local_part = username.split(":")[0]
-                return f"@{local_part}:{self.config.MATRIX_HOMESERVER_NAME}"
+            return username
+
+        # Remove leading @ if present (handles @username without homeserver)
+        if username.startswith("@"):
+            username = username[1:]
+
+        # Construct full user ID
+        return f"@{username}:{self.config.MATRIX_HOMESERVER_NAME}"
 
     def _generate_password_hash(self, password: str) -> str:
         """

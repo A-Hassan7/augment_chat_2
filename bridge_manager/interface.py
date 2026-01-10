@@ -58,7 +58,7 @@ class BridgeManagerInterface:
         bridge_client = self._get_bridge_client(bridge)
         login_code = asyncio.run(bridge_client.login(phone_number))
 
-        return login_code
+        return {'data': login_code}
 
     def delete_bridge(self, bridge: Bridges):
         self.bridge_orchestrator.delete_bridge(bridge_model=bridge)

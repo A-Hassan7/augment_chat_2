@@ -9,17 +9,28 @@ from vector_store import VectorStoreInterface
 from suggestions_service.suggestions import Suggestions
 from suggestions_service.database.repositories import SuggestionsRepository
 
+# Import user management routes
+from .user_management_routes import router as user_management_router
+
 vector_store = VectorStoreInterface()
 suggestions = Suggestions()
 suggestions_repo = SuggestionsRepository()
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Augment Chat API",
+    description="Backend API for augmented chat with user management",
+    version="1.0.0",
+)
 
 origins = [
     "http://localhost",
     "http://localhost:5500",
+    "http://localhost:5173",  # Vite default port
+    "http://localhost:3000",  # React default port
     "http://127.0.0.1:5500",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -29,6 +40,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include user management routes
+app.include_router(user_management_router)
 
 
 @app.get("/transcripts")

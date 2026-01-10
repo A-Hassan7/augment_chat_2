@@ -9,9 +9,10 @@ services:
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
-      - POSTGRES_DB=augment_chat  
+      - POSTGRES_DB=augment_chat
       
   redis:
+
     image: redis/redis-stack-server:latest
     container_name: redis
     restart: always
@@ -22,6 +23,33 @@ services:
     volumes:
       - redis:/data
 
+
+  synapse-database:
+    image: postgres:latest
+    container_name: synapse-database
+    restart: unless-stopped
+    ports:
+      - 5430:5432
+    environment:
+      - POSTGRES_USER=synapse
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_INITDB_ARGS=--encoding='UTF8' --lc-collate='C' --lc-ctype='C'
+    volumes:
+      - synapse_database:/var/lib/postgresql/data
+
+  synapse-admin:
+    container_name: synapse-admin
+    hostname: synapse-admin
+    build:
+      context: https://github.com/Awesome-Technologies/synapse-admin.git
+      args:
+        - BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+    ports:
+      - "8090:80"
+    restart: unless-stopped
+
 volumes:
   augment_chat_database:
   redis:
+  synapse_data:
+  synapse_database:
