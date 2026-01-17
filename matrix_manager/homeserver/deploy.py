@@ -12,10 +12,9 @@ import os
 import time
 import docker
 import subprocess
-import socket
-import random
 from pathlib import Path
 import yaml
+import worker_manager
 
 
 # Docker image versions
@@ -27,26 +26,6 @@ PROMETHEUS_IMAGE = "prom/prometheus:latest"
 GRAFANA_IMAGE = "grafana/grafana:latest"
 
 docker_client = docker.from_env()
-
-
-def find_available_port(start_port: int, max_attempts: int = 100) -> int:
-    """Find an available port starting from start_port with random offset to avoid collisions"""
-    # Add random offset to reduce collision probability when multiple workers start simultaneously
-    offset = random.randint(0, 50)
-    for attempt in range(max_attempts):
-        port = start_port + offset + attempt
-        if port > 65535:  # Max port number
-            port = start_port + attempt
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind(("0.0.0.0", port))
-                # Successfully bound, port is available
-                return port
-            except OSError:
-                continue
-    raise RuntimeError(f"Could not find available port starting from {start_port}")
 
 
 class HomeserverDeployer:
@@ -69,6 +48,8 @@ class HomeserverDeployer:
         self.nginx_dir = self.base_dir / "nginx"
         self.prometheus_dir = self.base_dir / "prometheus"
         self.grafana_dir = self.base_dir / "grafana"
+        self.grafana_provisioning_dir = self.base_dir / "grafana_provisioning"
+        self.grafana_dashboards_dir = self.base_dir / "grafana_dashboards"
 
         # Network and container names
         self.network_name = f"{homeserver_id}_network"
@@ -132,9 +113,6 @@ class HomeserverDeployer:
         # Deploy monitoring stack
         self._deploy_monitoring()
 
-        # Setup Grafana datasource and dashboards
-        self._setup_grafana()
-
         # Register admin user
         admin_user = self._register_admin_user()
 
@@ -170,6 +148,13 @@ class HomeserverDeployer:
         self.nginx_dir.mkdir(exist_ok=True)
         self.prometheus_dir.mkdir(exist_ok=True)
         self.grafana_dir.mkdir(exist_ok=True)
+        (self.grafana_provisioning_dir / "datasources").mkdir(
+            parents=True, exist_ok=True
+        )
+        (self.grafana_provisioning_dir / "dashboards").mkdir(
+            parents=True, exist_ok=True
+        )
+        self.grafana_dashboards_dir.mkdir(exist_ok=True)
         if self.num_workers > 0:
             self.workers_dir.mkdir(exist_ok=True)
 
@@ -401,33 +386,7 @@ class HomeserverDeployer:
 
     def _create_worker_config(self, worker_num: int):
         """Create configuration file for a worker"""
-        worker_name = f"generic_worker{worker_num}"
-        worker_config = {
-            "worker_app": "synapse.app.generic_worker",
-            "worker_name": worker_name,
-            "worker_listeners": [
-                {
-                    "type": "http",
-                    "port": 8083,
-                    "x_forwarded": True,
-                    "resources": [{"names": ["client", "federation"]}],
-                },
-                {
-                    "type": "http",
-                    "port": 9093,
-                    "resources": [{"names": ["replication"]}],
-                },
-                {
-                    "type": "http",
-                    "port": 9000,
-                    "resources": [{"names": ["metrics"]}],
-                },
-            ],
-        }
-
-        worker_config_path = self.workers_dir / f"worker{worker_num}.yaml"
-        with open(worker_config_path, "w") as f:
-            yaml.dump(worker_config, f, default_flow_style=False)
+        worker_manager.create_worker_config(self.workers_dir, worker_num)
 
     def _deploy_synapse(self):
         """Deploy Synapse container"""
@@ -459,44 +418,15 @@ class HomeserverDeployer:
         """Deploy worker containers"""
         print(f"Deploying {self.num_workers} worker containers...")
 
-        for i in range(1, self.num_workers + 1):
-            worker_container_name = f"{self.homeserver_id}_worker{i}"
-
-            # Find available port starting from 8000 + i
-            worker_port = find_available_port(8000 + i)
-
-            # Check if container already exists
-            try:
-                existing = docker_client.containers.get(worker_container_name)
-                existing.stop()
-                existing.remove()
-            except docker.errors.NotFound:
-                pass
-
-            # Start worker container
-            docker_client.containers.run(
-                SYNAPSE_IMAGE,
-                name=worker_container_name,
-                command=[
-                    "run",
-                    "-m",
-                    "synapse.app.generic_worker",
-                    "--config-path=/data/homeserver.yaml",
-                    f"--config-path=/data/workers/worker{i}.yaml",
-                ],
-                volumes={
-                    str(self.data_dir.absolute()): {"bind": "/data", "mode": "rw"}
-                },
-                ports={f"8083/tcp": worker_port},
-                network=self.network_name,
-                detach=True,
-                remove=False,
-            )
-
-            print(f"  ✓ Worker {i} deployed on port {worker_port}")
-
-            # Small delay to ensure port is fully bound before next worker
-            time.sleep(1)
+        worker_manager.deploy_workers_batch(
+            self.homeserver_id,
+            start_num=1,
+            end_num=self.num_workers,
+            data_dir=self.data_dir,
+            network_name=self.network_name,
+            workers_dir=self.workers_dir,
+            delay_between=1.0,
+        )
 
         print(f"  ✓ All workers deployed")
 
@@ -740,9 +670,59 @@ scrape_configs:
 
         print("  ✓ Prometheus deployed")
 
+    def _generate_grafana_provisioning(self):
+        """Generate Grafana provisioning files from templates"""
+        print("  Generating Grafana provisioning files from templates...")
+
+        templates_dir = Path(__file__).parent / "grafana_templates"
+
+        # Template variables for substitution
+        template_vars = {
+            "{{homeserver_id}}": self.homeserver_id,
+            "{{prometheus_container}}": self.prometheus_container,
+        }
+
+        def substitute_template(content: str) -> str:
+            """Replace template variables in content"""
+            for placeholder, value in template_vars.items():
+                content = content.replace(placeholder, value)
+            return content
+
+        # Copy and process datasources.yml
+        datasources_template = templates_dir / "datasources.yml"
+        if datasources_template.exists():
+            with open(datasources_template, "r") as f:
+                content = substitute_template(f.read())
+            datasources_path = (
+                self.grafana_provisioning_dir / "datasources" / "datasources.yml"
+            )
+            with open(datasources_path, "w") as f:
+                f.write(content)
+        else:
+            print("  Warning: datasources.yml template not found")
+
+        # Dashboards are imported via API, not file provisioning
+        # Store dashboard templates with substituted variables for API import
+        self._processed_dashboards = []
+        dashboard_files = list(templates_dir.glob("*.json"))
+
+        for template_file in dashboard_files:
+            with open(template_file, "r") as f:
+                content = substitute_template(f.read())
+            import json
+
+            self._processed_dashboards.append(
+                {"name": template_file.name, "dashboard": json.loads(content)}
+            )
+
+        print("  ✓ Grafana provisioning files generated")
+
     def _deploy_grafana(self):
         """Deploy Grafana container"""
         print("  Deploying Grafana...")
+
+        # Generate provisioning files (datasources only)
+        self._generate_grafana_provisioning()
 
         # Check if container already exists
         try:
@@ -765,7 +745,11 @@ scrape_configs:
                 str(self.grafana_dir.absolute()): {
                     "bind": "/var/lib/grafana",
                     "mode": "rw",
-                }
+                },
+                str(self.grafana_provisioning_dir.absolute()): {
+                    "bind": "/etc/grafana/provisioning",
+                    "mode": "ro",
+                },
             },
             ports={"3000/tcp": 3000},
             network=self.network_name,
@@ -774,6 +758,60 @@ scrape_configs:
         )
 
         print("  ✓ Grafana deployed")
+
+        # Import dashboards via API for editability
+        self._import_grafana_dashboards()
+
+    def _import_grafana_dashboards(self):
+        """Import dashboards via API so they're editable in UI"""
+        print("  Importing dashboards via API...")
+
+        # Wait for Grafana to be ready
+        import time
+        import requests
+
+        grafana_url = "http://localhost:3000"
+        auth = ("admin", "admin")
+
+        for i in range(30):
+            try:
+                response = requests.get(f"{grafana_url}/api/health")
+                if response.status_code == 200:
+                    break
+            except requests.exceptions.ConnectionError:
+                pass
+            time.sleep(2)
+        else:
+            print("  Warning: Grafana didn't start in time")
+            return
+
+        # Import each dashboard
+        if not hasattr(self, "_processed_dashboards"):
+            print("  No dashboards to import")
+            return
+
+        for dash_info in self._processed_dashboards:
+            dashboard = dash_info["dashboard"]
+            name = dash_info["name"]
+
+            # Remove id/uid/version so Grafana creates new dashboard
+            dashboard.pop("id", None)
+            dashboard.pop("uid", None)
+            dashboard.pop("version", None)
+
+            try:
+                response = requests.post(
+                    f"{grafana_url}/api/dashboards/db",
+                    json={"dashboard": dashboard, "overwrite": True},
+                    auth=auth,
+                    headers={"Content-Type": "application/json"},
+                )
+                if response.status_code == 200:
+                    print(f"  ✓ Imported dashboard: {name}")
+                else:
+                    print(f"  Warning: Failed to import {name}: {response.text}")
+            except Exception as e:
+                print(f"  Warning: Could not import {name}: {e}")
 
     def _wait_for_synapse(self):
         """Wait for Synapse to be ready"""
@@ -870,7 +908,7 @@ scrape_configs:
 
 
 def deploy(
-    homeserver_id: str = "hs-001", domain: str = "localhost", num_workers: int = 0
+    homeserver_id: str = "hs-002", domain: str = "localhost", num_workers: int = 0
 ):
     """
     Deploy a new homeserver instance

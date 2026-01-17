@@ -1,0 +1,3 @@
+# Dashboard provisioning disabled - using API import instead
+# This allows dashboards to be fully editable in the UI
+# Dashboards are imported once via API on deployment
