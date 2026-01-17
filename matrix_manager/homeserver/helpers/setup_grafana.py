@@ -31,7 +31,7 @@ def export_dashboard(
         output_file: Output filename (defaults to slug-based name)
     """
     auth = ("admin", "admin")
-    templates_dir = Path(__file__).parent / "grafana_templates"
+    templates_dir = Path(__file__).parent.parent / "templates" / "grafana"
 
     # If no UID provided, list available dashboards
     if not dashboard_uid:

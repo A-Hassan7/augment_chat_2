@@ -37,8 +37,11 @@ import random
 import time
 from pathlib import Path
 from typing import Optional
-import homeserver_config as config
-import nginx_manager
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+from helpers import nginx_manager
 
 docker_client = docker.from_env()
 
@@ -452,10 +455,10 @@ if __name__ == "__main__":
         description="Worker management for Matrix homeserver deployments",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python worker_manager.py hs-001 --scale 5      # Scale to 5 workers
-  python worker_manager.py hs-001 --scale 0      # Scale down to monolith
-  python worker_manager.py hs-001 --status       # Check worker status
+        Examples:
+            python worker_manager.py hs-001 --scale 5      # Scale to 5 workers
+            python worker_manager.py hs-001 --scale 0      # Scale down to monolith
+            python worker_manager.py hs-001 --status       # Check worker status
         """,
     )
 

@@ -7,7 +7,10 @@ Uses a template-based approach with variable substitution.
 
 import docker
 from pathlib import Path
-import homeserver_config as config
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
 
 docker_client = docker.from_env()
 
@@ -31,7 +34,9 @@ def generate_nginx_config(
         Generated nginx configuration as string
     """
     # Load template
-    template_path = Path(__file__).parent / "nginx_config_template.conf"
+    template_path = (
+        Path(__file__).parent.parent / "templates" / "nginx_config_template.conf"
+    )
     with open(template_path, "r") as f:
         template = f.read()
 

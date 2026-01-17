@@ -14,9 +14,9 @@ import docker
 import subprocess
 from pathlib import Path
 import yaml
-import worker_manager
-import nginx_manager
-import homeserver_config as HS_CONFIG
+from helpers import worker_manager
+from helpers import nginx_manager
+import config as HS_CONFIG
 import requests
 
 docker_client = docker.from_env()
@@ -601,7 +601,7 @@ scrape_configs:
         """Generate Grafana provisioning files from templates"""
         print("  Generating Grafana provisioning files from templates...")
 
-        templates_dir = Path(__file__).parent / "grafana_templates"
+        templates_dir = Path(__file__).parent / "templates"
 
         # Template variables for substitution
         template_vars = {
@@ -616,7 +616,7 @@ scrape_configs:
             return content
 
         # Copy and process datasources.yml
-        datasources_template = templates_dir / "datasources.yml"
+        datasources_template = templates_dir / "grafana" / "datasources.yml"
         if datasources_template.exists():
             with open(datasources_template, "r") as f:
                 content = substitute_template(f.read())
@@ -631,7 +631,7 @@ scrape_configs:
         # Dashboards are imported via API, not file provisioning
         # Store dashboard templates with substituted variables for API import
         self._processed_dashboards = []
-        dashboard_files = list(templates_dir.glob("*.json"))
+        dashboard_files = list((templates_dir / "grafana").glob("*.json"))
 
         for template_file in dashboard_files:
             with open(template_file, "r") as f:
