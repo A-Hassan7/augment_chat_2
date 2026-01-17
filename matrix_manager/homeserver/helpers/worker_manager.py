@@ -314,27 +314,61 @@ def update_prometheus_config(homeserver_id: str, num_workers: int, base_dir: Pat
         print("  ! Prometheus not deployed, skipping")
         return
 
-    # Build targets list
-    targets = [f"{homeserver_id}_synapse:9000"]
-    for i in range(1, num_workers + 1):
-        targets.append(f"{homeserver_id}_worker{i}:9000")
+    # Build scrape configs with proper instance labels using relabel_configs
+    scrape_configs = [
+        {
+            "job_name": "synapse",
+            "metrics_path": "/_synapse/metrics",
+            "static_configs": [
+                {
+                    "targets": [f"{homeserver_id}_synapse:9000"],
+                    "labels": {"homeserver": homeserver_id, "instance_name": "main"},
+                }
+            ],
+            "relabel_configs": [
+                {"source_labels": ["instance_name"], "target_label": "instance"},
+                {"regex": "instance_name", "action": "labeldrop"},
+            ],
+        }
+    ]
+
+    # Add workers with individual instance labels
+    if num_workers > 0:
+        worker_configs = []
+        for i in range(1, num_workers + 1):
+            worker_configs.append(
+                {
+                    "targets": [f"{homeserver_id}_worker{i}:9000"],
+                    "labels": {
+                        "homeserver": homeserver_id,
+                        "instance_name": f"worker{i}",
+                    },
+                }
+            )
+
+        scrape_configs.append(
+            {
+                "job_name": "synapse-workers",
+                "metrics_path": "/_synapse/metrics",
+                "static_configs": worker_configs,
+                "relabel_configs": [
+                    {"source_labels": ["instance_name"], "target_label": "instance"},
+                    {"regex": "instance_name", "action": "labeldrop"},
+                ],
+            }
+        )
+
+    scrape_configs.append(
+        {
+            "job_name": "nginx",
+            "static_configs": [{"targets": [f"{homeserver_id}_nginx:8080"]}],
+            "metrics_path": "/nginx_status",
+        }
+    )
 
     prometheus_config = {
         "global": {"scrape_interval": "15s", "evaluation_interval": "15s"},
-        "scrape_configs": [
-            {
-                "job_name": "synapse",
-                "metrics_path": "/_synapse/metrics",
-                "static_configs": [
-                    {"targets": targets, "labels": {"homeserver": homeserver_id}}
-                ],
-            },
-            {
-                "job_name": "nginx",
-                "static_configs": [{"targets": [f"{homeserver_id}_nginx:8080"]}],
-                "metrics_path": "/nginx_status",
-            },
-        ],
+        "scrape_configs": scrape_configs,
     }
 
     with open(config_path, "w") as f:
@@ -485,7 +519,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    deployments_dir = Path(__file__).parent / "deployments"
+    # Deployments dir is in parent directory
+    deployments_dir = Path(__file__).parent.parent / "deployments"
 
     try:
         if args.status:

@@ -511,31 +511,49 @@ class HomeserverDeployer:
         """Generate Prometheus configuration"""
         print("  Generating Prometheus configuration...")
 
-        # Build scrape targets
-        scrape_configs = [
-            # Synapse main process
+        # Build scrape configs with proper instance labels
+        scrape_configs = []
+
+        # Synapse main process
+        scrape_configs.append(
             f"""
-  - job_name: 'synapse_main'
+  - job_name: 'synapse'
     metrics_path: '/_synapse/metrics'
     static_configs:
       - targets: ['{self.synapse_container}:{HS_CONFIG.SYNAPSE_METRICS_PORT}']
         labels:
-          instance: 'main'
+          instance_name: 'main'
+          homeserver: '{self.homeserver_id}'
+    relabel_configs:
+      - source_labels: [instance_name]
+        target_label: instance
+      - regex: instance_name
+        action: labeldrop
+"""
+        )
+
+        # Add workers as a single job with multiple configs
+        if self.num_workers > 0:
+            worker_targets = []
+            for i in range(1, self.num_workers + 1):
+                worker_targets.append(
+                    f"""      - targets: ['{self.homeserver_id}_worker{i}:{HS_CONFIG.SYNAPSE_METRICS_PORT}']
+        labels:
+          instance_name: 'worker{i}'
           homeserver: '{self.homeserver_id}'
 """
-        ]
+                )
 
-        # Add workers
-        for i in range(1, self.num_workers + 1):
             scrape_configs.append(
                 f"""
-  - job_name: 'synapse_worker_{i}'
+  - job_name: 'synapse-workers'
     metrics_path: '/_synapse/metrics'
     static_configs:
-      - targets: ['{self.homeserver_id}_worker{i}:{HS_CONFIG.SYNAPSE_METRICS_PORT}']
-        labels:
-          instance: 'worker{i}'
-          homeserver: '{self.homeserver_id}'
+{''.join(worker_targets)}    relabel_configs:
+      - source_labels: [instance_name]
+        target_label: instance
+      - regex: instance_name
+        action: labeldrop
 """
             )
 
