@@ -37,16 +37,19 @@ import random
 import time
 from pathlib import Path
 from typing import Optional
+import homeserver_config as config
+import nginx_manager
 
 docker_client = docker.from_env()
 
-SYNAPSE_IMAGE = "matrixdotorg/synapse:latest"
 
-
-def find_available_port(start_port: int, max_attempts: int = 100) -> int:
+def find_available_port(start_port: int, max_attempts: int = None) -> int:
     """Find an available port starting from start_port with random offset to avoid collisions"""
+    if max_attempts is None:
+        max_attempts = config.WORKER_PORT_MAX_ATTEMPTS
+
     # Add random offset to reduce collision probability when multiple workers start simultaneously
-    offset = random.randint(0, 50)
+    offset = random.randint(0, config.WORKER_PORT_RANDOM_OFFSET)
     for attempt in range(max_attempts):
         port = start_port + offset + attempt
         if port > 65535:  # Max port number
@@ -138,7 +141,7 @@ def deploy_worker(
 
     # Start worker container
     docker_client.containers.run(
-        SYNAPSE_IMAGE,
+        config.SYNAPSE_IMAGE,
         name=worker_container_name,
         command=[
             "run",
@@ -271,89 +274,25 @@ def remove_workers_batch(
         print(f"  ✓ Removed worker {i}")
 
 
-def update_nginx_config(homeserver_id: str, num_workers: int, base_dir: Path):
+def update_nginx_config(
+    homeserver_id: str, domain: str, num_workers: int, base_dir: Path
+):
     """
     Regenerate nginx config and reload for new worker count
 
     Args:
         homeserver_id: The homeserver ID
+        domain: Domain name for the server
         num_workers: Total number of workers
         base_dir: Base deployment directory
     """
-    nginx_dir = base_dir / "nginx"
-    config_path = nginx_dir / "synapse.conf"
-
-    if not config_path.exists():
-        print("  ! Nginx not deployed, skipping")
-        return
-
-    # Generate upstream configuration
-    if num_workers > 0:
-        upstream_servers = "\n".join(
-            f"        server {homeserver_id}_worker{i}:8083;"
-            for i in range(1, num_workers + 1)
-        )
-    else:
-        upstream_servers = f"        server {homeserver_id}_synapse:8008;"
-
-    nginx_config = f"""events {{
-    worker_connections 1024;
-}}
-
-http {{
-    # Docker DNS resolver
-    resolver 127.0.0.11 valid=30s;
-    
-    upstream synapse {{
-        hash $remote_addr consistent;
-{upstream_servers}
-    }}
-
-    server {{
-        listen 80;
-        server_name {homeserver_id}.localhost;
-
-        # Client API
-        location ~ ^(/_matrix|/_synapse/client) {{
-            proxy_pass http://synapse;
-            proxy_set_header X-Forwarded-For $remote_addr;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Host $host;
-            
-            # WebSocket support
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-        }}
-        
-        # Health check endpoint
-        location /health {{
-            access_log off;
-            return 200 "healthy\\n";
-            add_header Content-Type text/plain;
-        }}
-    }}
-
-    # Metrics endpoint for Prometheus
-    server {{
-        listen 8080;
-        location /nginx_status {{
-            stub_status on;
-            access_log off;
-        }}
-    }}
-}}"""
-
-    with open(config_path, "w") as f:
-        f.write(nginx_config)
-
-    # Reload nginx
-    try:
-        nginx_container = docker_client.containers.get(f"{homeserver_id}_nginx")
-        nginx_container.exec_run("nginx -s reload")
-        print("  ✓ Updated and reloaded nginx config")
-    except docker.errors.NotFound:
-        print("  ! Nginx container not found")
+    nginx_manager.update_nginx_config(
+        homeserver_id=homeserver_id,
+        domain=domain,
+        num_workers=num_workers,
+        base_dir=base_dir,
+        reload=True,
+    )
 
 
 def update_prometheus_config(homeserver_id: str, num_workers: int, base_dir: Path):
@@ -409,7 +348,12 @@ def update_prometheus_config(homeserver_id: str, num_workers: int, base_dir: Pat
         print("  ! Prometheus container not found")
 
 
-def scale_workers(homeserver_id: str, target_workers: int, deployments_dir: Path):
+def scale_workers(
+    homeserver_id: str,
+    target_workers: int,
+    deployments_dir: Path,
+    domain: str = "localhost",
+):
     """
     Scale the number of workers for a homeserver up or down
 
@@ -417,6 +361,7 @@ def scale_workers(homeserver_id: str, target_workers: int, deployments_dir: Path
         homeserver_id: The homeserver to scale
         target_workers: Desired number of workers
         deployments_dir: Path to deployments directory
+        domain: Domain name for nginx config (default: localhost)
     """
     base_dir = deployments_dir / homeserver_id
     data_dir = base_dir / "synapse" / "data"
@@ -462,7 +407,7 @@ def scale_workers(homeserver_id: str, target_workers: int, deployments_dir: Path
     update_instance_map(homeserver_id, config_path, target_workers)
     print("  ✓ Updated instance map")
 
-    update_nginx_config(homeserver_id, target_workers, base_dir)
+    update_nginx_config(homeserver_id, domain, target_workers, base_dir)
     update_prometheus_config(homeserver_id, target_workers, base_dir)
 
     print(f"✓ Scaled to {target_workers} workers")
@@ -515,6 +460,12 @@ Examples:
     )
 
     parser.add_argument("homeserver_id", help="The homeserver ID to manage")
+    parser.add_argument(
+        "--domain",
+        type=str,
+        default="localhost",
+        help="Domain name for nginx config (default: localhost)",
+    )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -537,7 +488,7 @@ Examples:
         if args.status:
             get_worker_status(args.homeserver_id)
         elif args.scale is not None:
-            scale_workers(args.homeserver_id, args.scale, deployments_dir)
+            scale_workers(args.homeserver_id, args.scale, deployments_dir, args.domain)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

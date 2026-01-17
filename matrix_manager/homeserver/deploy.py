@@ -15,15 +15,9 @@ import subprocess
 from pathlib import Path
 import yaml
 import worker_manager
-
-
-# Docker image versions
-POSTGRES_IMAGE = "postgres:15-alpine"
-SYNAPSE_IMAGE = "matrixdotorg/synapse:latest"
-REDIS_IMAGE = "redis:7-alpine"
-NGINX_IMAGE = "nginx:alpine"
-PROMETHEUS_IMAGE = "prom/prometheus:latest"
-GRAFANA_IMAGE = "grafana/grafana:latest"
+import nginx_manager
+import homeserver_config as HS_CONFIG
+import requests
 
 docker_client = docker.from_env()
 
@@ -62,8 +56,8 @@ class HomeserverDeployer:
 
         # Database credentials
         self.db_name = homeserver_id.replace("-", "_")
-        self.db_user = "synapse"
-        self.db_password = "password"  # In production, generate securely
+        self.db_user = HS_CONFIG.DB_USER
+        self.db_password = HS_CONFIG.DB_PASSWORD
 
     def deploy(self):
         """Deploy the complete homeserver stack"""
@@ -117,24 +111,28 @@ class HomeserverDeployer:
         admin_user = self._register_admin_user()
 
         print(f"\n✓ Homeserver {self.homeserver_id} deployed successfully!")
-        print(f"  Synapse URL (via Nginx): http://{self.domain}:80")
-        print(f"  Synapse Direct: http://{self.domain}:8008")
+        print(
+            f"  Synapse URL (via Nginx): http://{self.domain}:{HS_CONFIG.NGINX_HTTP_PORT}"
+        )
+        print(f"  Synapse Direct: http://{self.domain}:{HS_CONFIG.SYNAPSE_HTTP_PORT}")
         print(f"  Admin user: {admin_user}")
         if self.num_workers > 0:
             print(f"  Workers: {self.num_workers} generic workers running")
-        print(f"  Prometheus: http://{self.domain}:9090")
-        print(f"  Grafana: http://{self.domain}:3000 (admin/admin)")
+        print(f"  Prometheus: http://{self.domain}:{HS_CONFIG.PROMETHEUS_PORT}")
+        print(
+            f"  Grafana: http://{self.domain}:{HS_CONFIG.GRAFANA_PORT} ({HS_CONFIG.GRAFANA_ADMIN_USER}/{HS_CONFIG.GRAFANA_ADMIN_PASSWORD})"
+        )
 
         return {
             "homeserver_id": self.homeserver_id,
-            "synapse_url": f"http://{self.domain}:80",
-            "synapse_direct_url": f"http://{self.domain}:8008",
+            "synapse_url": f"http://{self.domain}:{HS_CONFIG.NGINX_HTTP_PORT}",
+            "synapse_direct_url": f"http://{self.domain}:{HS_CONFIG.SYNAPSE_HTTP_PORT}",
             "admin_user": admin_user,
             "postgres_container": self.postgres_container,
             "synapse_container": self.synapse_container,
             "nginx_container": self.nginx_container,
-            "prometheus_url": f"http://{self.domain}:9090",
-            "grafana_url": f"http://{self.domain}:3000",
+            "prometheus_url": f"http://{self.domain}:{HS_CONFIG.PROMETHEUS_PORT}",
+            "grafana_url": f"http://{self.domain}:{HS_CONFIG.GRAFANA_PORT}",
             "num_workers": self.num_workers,
         }
 
@@ -184,7 +182,7 @@ class HomeserverDeployer:
 
         # Start Postgres container
         container = docker_client.containers.run(
-            POSTGRES_IMAGE,
+            HS_CONFIG.POSTGRES_IMAGE,
             name=self.postgres_container,
             environment={
                 "POSTGRES_DB": self.db_name,
@@ -233,7 +231,7 @@ class HomeserverDeployer:
 
         # Start Redis container
         container = docker_client.containers.run(
-            REDIS_IMAGE,
+            HS_CONFIG.REDIS_IMAGE,
             name=self.redis_container,
             network=self.network_name,
             detach=True,
@@ -265,7 +263,7 @@ class HomeserverDeployer:
 
         # Generate config using Docker
         docker_client.containers.run(
-            SYNAPSE_IMAGE,
+            HS_CONFIG.SYNAPSE_IMAGE,
             command="generate",
             environment={
                 "SYNAPSE_SERVER_NAME": self.homeserver_id,
@@ -294,9 +292,9 @@ class HomeserverDeployer:
                 "password": self.db_password,
                 "database": self.db_name,
                 "host": self.postgres_container,
-                "port": 5432,
-                "cp_min": 5,
-                "cp_max": 10,
+                "port": HS_CONFIG.POSTGRES_PORT,
+                "cp_min": HS_CONFIG.DB_MIN_CONNECTIONS,
+                "cp_max": HS_CONFIG.DB_MAX_CONNECTIONS,
             },
         }
 
@@ -314,7 +312,7 @@ class HomeserverDeployer:
                 config["listeners"] = []
             config["listeners"].append(
                 {
-                    "port": 9000,
+                    "port": HS_CONFIG.SYNAPSE_METRICS_PORT,
                     "bind_addresses": ["0.0.0.0"],
                     "type": "http",
                     "resources": [{"names": ["metrics"]}],
@@ -336,7 +334,11 @@ class HomeserverDeployer:
             config = yaml.safe_load(f)
 
         # Enable Redis
-        config["redis"] = {"enabled": True, "host": self.redis_container, "port": 6379}
+        config["redis"] = {
+            "enabled": True,
+            "host": self.redis_container,
+            "port": HS_CONFIG.REDIS_PORT,
+        }
 
         # Add HTTP replication listener for main process
         if "listeners" not in config:
@@ -344,7 +346,7 @@ class HomeserverDeployer:
 
         config["listeners"].append(
             {
-                "port": 9093,
+                "port": HS_CONFIG.SYNAPSE_REPLICATION_PORT,
                 "bind_addresses": ["0.0.0.0"],
                 "type": "http",
                 "resources": [{"names": ["replication"]}],
@@ -354,7 +356,7 @@ class HomeserverDeployer:
         # Add metrics listener for main process
         config["listeners"].append(
             {
-                "port": 9000,
+                "port": HS_CONFIG.SYNAPSE_METRICS_PORT,
                 "bind_addresses": ["0.0.0.0"],
                 "type": "http",
                 "resources": [{"names": ["metrics"]}],
@@ -362,14 +364,19 @@ class HomeserverDeployer:
         )
 
         # Build instance map
-        instance_map = {"main": {"host": self.synapse_container, "port": 9093}}
+        instance_map = {
+            "main": {
+                "host": self.synapse_container,
+                "port": HS_CONFIG.SYNAPSE_REPLICATION_PORT,
+            }
+        }
 
         # Add each worker to instance map
         for i in range(1, self.num_workers + 1):
             worker_name = f"generic_worker{i}"
             instance_map[worker_name] = {
                 "host": f"{self.homeserver_id}_worker{i}",
-                "port": 9093,
+                "port": HS_CONFIG.SYNAPSE_REPLICATION_PORT,
             }
 
         config["instance_map"] = instance_map
@@ -403,10 +410,13 @@ class HomeserverDeployer:
 
         # Start Synapse container
         container = docker_client.containers.run(
-            SYNAPSE_IMAGE,
+            HS_CONFIG.SYNAPSE_IMAGE,
             name=self.synapse_container,
             volumes={str(self.data_dir.absolute()): {"bind": "/data", "mode": "rw"}},
-            ports={"8008/tcp": 8008, "8448/tcp": 8448},
+            ports={
+                f"{HS_CONFIG.SYNAPSE_HTTP_PORT}/tcp": HS_CONFIG.SYNAPSE_HTTP_PORT,
+                f"{HS_CONFIG.SYNAPSE_FEDERATION_PORT}/tcp": HS_CONFIG.SYNAPSE_FEDERATION_PORT,
+            },
             network=self.network_name,
             detach=True,
             remove=False,
@@ -447,7 +457,7 @@ class HomeserverDeployer:
 
         # Start Nginx container
         docker_client.containers.run(
-            NGINX_IMAGE,
+            HS_CONFIG.NGINX_IMAGE,
             name=self.nginx_container,
             volumes={
                 str(self.nginx_dir.absolute()): {
@@ -455,7 +465,10 @@ class HomeserverDeployer:
                     "mode": "ro",
                 }
             },
-            ports={"80/tcp": 80, "8080/tcp": 8080},  # Status/metrics endpoint
+            ports={
+                f"{HS_CONFIG.NGINX_HTTP_PORT}/tcp": HS_CONFIG.NGINX_HTTP_PORT,
+                f"{HS_CONFIG.NGINX_STATUS_PORT}/tcp": HS_CONFIG.NGINX_STATUS_PORT,
+            },  # Status/metrics endpoint
             network=self.network_name,
             detach=True,
             remove=False,
@@ -467,101 +480,15 @@ class HomeserverDeployer:
         """Generate Nginx configuration for load balancing"""
         print("  Generating Nginx configuration...")
 
-        # Build upstream configuration
-        if self.num_workers > 0:
-            # Load balance across workers
-            upstream_servers = []
-            for i in range(1, self.num_workers + 1):
-                upstream_servers.append(
-                    f"        server {self.homeserver_id}_worker{i}:8083;"
-                )
-            upstream_block = "\n".join(upstream_servers)
-        else:
-            # Single main process
-            upstream_block = f"        server {self.synapse_container}:8008;"
-
-        nginx_config = f"""
-# Docker DNS resolver
-resolver 127.0.0.11 valid=30s;
-
-# Upstream for Synapse (main or workers)
-upstream synapse_backend {{
-    # Use consistent hashing for sticky sessions
-    hash $remote_addr consistent;
-    
-{upstream_block}
-    
-    # Health checks and load balancing
-    keepalive 32;
-}}
-
-# Health check endpoint for monitoring
-server {{
-    listen 8080;
-    server_name _;
-    
-    location /health {{
-        access_log off;
-        return 200 "healthy\\n";
-        add_header Content-Type text/plain;
-    }}
-    
-    location /nginx_status {{
-        stub_status on;
-        access_log off;
-    }}
-}}
-
-# Main proxy server
-server {{
-    listen 80;
-    server_name {self.domain};
-    
-    # Increase buffer sizes for large requests
-    client_max_body_size 50M;
-    client_body_buffer_size 128k;
-    
-    # Logging
-    access_log /var/log/nginx/synapse_access.log;
-    error_log /var/log/nginx/synapse_error.log;
-    
-    # Matrix client API
-    location /_matrix {{
-        proxy_pass http://synapse_backend;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $host;
-        
-        # Timeouts
-        proxy_connect_timeout 90s;
-        proxy_send_timeout 90s;
-        proxy_read_timeout 90s;
-        
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }}
-    
-    # Federation API
-    location /_synapse {{
-        proxy_pass http://synapse_backend;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $host;
-    }}
-    
-    # Health check endpoint
-    location /health {{
-        access_log off;
-        proxy_pass http://synapse_backend/_matrix/client/versions;
-    }}
-}}
-"""
+        nginx_config = nginx_manager.generate_nginx_config(
+            homeserver_id=self.homeserver_id,
+            domain=self.domain,
+            num_workers=self.num_workers,
+            synapse_container=self.synapse_container,
+        )
 
         config_path = self.nginx_dir / "synapse.conf"
-        with open(config_path, "w") as f:
-            f.write(nginx_config)
+        nginx_manager.write_nginx_config(config_path, nginx_config)
 
         print("  ✓ Nginx configuration generated")
 
@@ -591,7 +518,7 @@ server {{
   - job_name: 'synapse_main'
     metrics_path: '/_synapse/metrics'
     static_configs:
-      - targets: ['{self.synapse_container}:9000']
+      - targets: ['{self.synapse_container}:{HS_CONFIG.SYNAPSE_METRICS_PORT}']
         labels:
           instance: 'main'
           homeserver: '{self.homeserver_id}'
@@ -605,7 +532,7 @@ server {{
   - job_name: 'synapse_worker_{i}'
     metrics_path: '/_synapse/metrics'
     static_configs:
-      - targets: ['{self.homeserver_id}_worker{i}:9000']
+      - targets: ['{self.homeserver_id}_worker{i}:{HS_CONFIG.SYNAPSE_METRICS_PORT}']
         labels:
           instance: 'worker{i}'
           homeserver: '{self.homeserver_id}'
@@ -618,7 +545,7 @@ server {{
   - job_name: 'nginx'
     metrics_path: '/nginx_status'
     static_configs:
-      - targets: ['{self.nginx_container}:8080']
+      - targets: ['{self.nginx_container}:{HS_CONFIG.NGINX_STATUS_PORT}']
         labels:
           instance: 'nginx'
           homeserver: '{self.homeserver_id}'
@@ -627,8 +554,8 @@ server {{
 
         prometheus_config = f"""
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: {HS_CONFIG.PROMETHEUS_SCRAPE_INTERVAL}
+  evaluation_interval: {HS_CONFIG.PROMETHEUS_EVALUATION_INTERVAL}
 
 scrape_configs:
 {''.join(scrape_configs)}
@@ -654,7 +581,7 @@ scrape_configs:
 
         # Start Prometheus container
         docker_client.containers.run(
-            PROMETHEUS_IMAGE,
+            HS_CONFIG.PROMETHEUS_IMAGE,
             name=self.prometheus_container,
             volumes={
                 str(self.prometheus_dir.absolute()): {
@@ -662,7 +589,7 @@ scrape_configs:
                     "mode": "ro",
                 }
             },
-            ports={"9090/tcp": 9090},
+            ports={f"{HS_CONFIG.PROMETHEUS_PORT}/tcp": HS_CONFIG.PROMETHEUS_PORT},
             network=self.network_name,
             detach=True,
             remove=False,
@@ -734,12 +661,14 @@ scrape_configs:
 
         # Start Grafana container
         docker_client.containers.run(
-            GRAFANA_IMAGE,
+            HS_CONFIG.GRAFANA_IMAGE,
             name=self.grafana_container,
             environment={
-                "GF_SECURITY_ADMIN_PASSWORD": "admin",
-                "GF_AUTH_ANONYMOUS_ENABLED": "true",
-                "GF_AUTH_ANONYMOUS_ORG_ROLE": "Viewer",
+                "GF_SECURITY_ADMIN_PASSWORD": HS_CONFIG.GRAFANA_ADMIN_PASSWORD,
+                "GF_AUTH_ANONYMOUS_ENABLED": (
+                    "true" if HS_CONFIG.GRAFANA_ANONYMOUS_ACCESS else "false"
+                ),
+                "GF_AUTH_ANONYMOUS_ORG_ROLE": HS_CONFIG.GRAFANA_ANONYMOUS_ROLE,
             },
             volumes={
                 str(self.grafana_dir.absolute()): {
@@ -751,7 +680,7 @@ scrape_configs:
                     "mode": "ro",
                 },
             },
-            ports={"3000/tcp": 3000},
+            ports={f"{HS_CONFIG.GRAFANA_PORT}/tcp": HS_CONFIG.GRAFANA_PORT},
             network=self.network_name,
             detach=True,
             remove=False,
@@ -770,10 +699,10 @@ scrape_configs:
         import time
         import requests
 
-        grafana_url = "http://localhost:3000"
-        auth = ("admin", "admin")
+        grafana_url = f"http://localhost:{HS_CONFIG.GRAFANA_PORT}"
+        auth = (HS_CONFIG.GRAFANA_ADMIN_USER, HS_CONFIG.GRAFANA_ADMIN_PASSWORD)
 
-        for i in range(30):
+        for i in range(HS_CONFIG.GRAFANA_STARTUP_TIMEOUT // 2):
             try:
                 response = requests.get(f"{grafana_url}/api/health")
                 if response.status_code == 200:
@@ -819,10 +748,11 @@ scrape_configs:
 
         import requests
 
-        for i in range(60):
+        for i in range(HS_CONFIG.SYNAPSE_STARTUP_TIMEOUT):
             try:
                 response = requests.get(
-                    f"http://{self.domain}:8008/_matrix/client/versions", timeout=2
+                    f"http://{self.domain}:{HS_CONFIG.SYNAPSE_HTTP_PORT}/_matrix/client/versions",
+                    timeout=2,
                 )
                 if response.status_code == 200:
                     print("  ✓ Synapse is ready")
@@ -831,21 +761,23 @@ scrape_configs:
                 pass
             time.sleep(1)
 
-        raise Exception("Synapse failed to start within 60 seconds")
+        raise Exception(
+            f"Synapse failed to start within {HS_CONFIG.SYNAPSE_STARTUP_TIMEOUT} seconds"
+        )
 
     def _register_admin_user(self):
         """Register an admin user"""
         print("Registering admin user...")
 
-        admin_username = f"admin"
-        admin_password = "admin"  # In production, generate securely
+        admin_username = HS_CONFIG.MATRIX_ADMIN_USERNAME
+        admin_password = HS_CONFIG.MATRIX_ADMIN_PASSWORD
 
         container = docker_client.containers.get(self.synapse_container)
 
         # Register user using register_new_matrix_user
         result = container.exec_run(
             f"register_new_matrix_user -c /data/homeserver.yaml "
-            f"-u {admin_username} -p {admin_password} --admin http://{self.domain}:8008",
+            f"-u {admin_username} -p {admin_password} --admin http://{self.domain}:{HS_CONFIG.SYNAPSE_HTTP_PORT}",
             stdin=True,
         )
 
@@ -862,12 +794,12 @@ scrape_configs:
 
         import requests
 
-        grafana_url = f"http://{self.domain}:3000"
-        auth = ("admin", "admin")
+        grafana_url = f"http://{self.domain}:{HS_CONFIG.GRAFANA_PORT}"
+        auth = (HS_CONFIG.GRAFANA_ADMIN_USER, HS_CONFIG.GRAFANA_ADMIN_PASSWORD)
 
         # Wait for Grafana to be ready
         print("  Waiting for Grafana to be ready...")
-        for i in range(30):
+        for i in range(HS_CONFIG.GRAFANA_STARTUP_TIMEOUT // 2):
             try:
                 response = requests.get(f"{grafana_url}/api/health", timeout=2)
                 if response.status_code == 200:
@@ -882,9 +814,9 @@ scrape_configs:
             "name": "Prometheus",
             "type": "prometheus",
             "access": "proxy",
-            "url": f"http://{self.prometheus_container}:9090",
+            "url": f"http://{self.prometheus_container}:{HS_CONFIG.PROMETHEUS_PORT}",
             "isDefault": True,
-            "jsonData": {"timeInterval": "15s"},
+            "jsonData": {"timeInterval": HS_CONFIG.PROMETHEUS_SCRAPE_INTERVAL},
         }
 
         try:
@@ -907,15 +839,13 @@ scrape_configs:
         print(f"  Username: admin, Password: admin")
 
 
-def deploy(
-    homeserver_id: str = "hs-002", domain: str = "localhost", num_workers: int = 0
-):
+def deploy(homeserver_id: str, domain: str, num_workers: int = 0):
     """
     Deploy a new homeserver instance
 
     Args:
-        homeserver_id: Unique identifier for this homeserver
-        domain: Domain name for the homeserver
+        homeserver_id: Unique identifier for this homeserver (hs-001)
+        domain: Domain name for the homeserver (localhost)
         num_workers: Number of generic workers to deploy (0 = monolith mode)
 
     Returns:
@@ -934,4 +864,4 @@ def deploy(
 
 if __name__ == "__main__":
     # Deploy with 2 workers for demonstration
-    deploy(num_workers=3)
+    deploy(homeserver_id="hs-001", domain="localhost", num_workers=3)
