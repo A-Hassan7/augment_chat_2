@@ -519,7 +519,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Deployments dir is in parent directory
+    # Deployments dir is in homeserver directory
     deployments_dir = Path(__file__).parent.parent / "deployments"
 
     try:
