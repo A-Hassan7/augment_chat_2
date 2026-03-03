@@ -9,9 +9,6 @@ from typing import Dict, Any, Optional
 import json
 import docker
 
-import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import config as HS_CONFIG
 from services.base import BaseService
 
@@ -52,9 +49,7 @@ class GrafanaService(BaseService):
         # Paths
         self.grafana_dir = base_dir / "grafana"
         self.grafana_provisioning_dir = self.grafana_dir / "provisioning"
-        self.templates_dir = (
-            Path(__file__).parent.parent.parent / "templates" / "grafana"
-        )
+        self.templates_dir = Path("templates") / "grafana"
 
     def service_name(self) -> str:
         return "grafana"

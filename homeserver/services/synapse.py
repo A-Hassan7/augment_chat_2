@@ -9,9 +9,6 @@ from typing import Dict, Any, Optional
 import yaml
 import docker
 
-import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import config as HS_CONFIG
 from services.base import BaseService
 
@@ -195,9 +192,7 @@ class SynapseService(BaseService):
         import shutil
 
         source_registration = (
-            Path(__file__).parent.parent.parent
-            / "bridge_manager"
-            / "bridge-manager-registration.yaml"
+            Path("bridge_manager") / "bridge-manager-registration.yaml"
         )
         registration_path = appservices_dir / "bridge_manager.yaml"
 

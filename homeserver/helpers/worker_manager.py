@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import Optional
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 from helpers import nginx_manager
 
@@ -520,7 +519,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Deployments dir is in homeserver directory
-    deployments_dir = Path(__file__).parent.parent / "deployments"
+    deployments_dir = Path("deployments")
 
     try:
         if args.status:

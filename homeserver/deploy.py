@@ -11,9 +11,6 @@ Demonstrates improved maintainability patterns:
 from pathlib import Path
 from typing import List, Dict, Any
 import docker
-import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 import config as HS_CONFIG
 from services import (
     PostgresService,
@@ -47,7 +44,7 @@ class DeploymentPlan:
         self.num_workers = num_workers
 
         # Setup paths
-        self.base_dir = Path(__file__).parent / "deployments" / homeserver_id
+        self.base_dir = Path("deployments") / homeserver_id
         self.network_name = f"{homeserver_id}_network"
 
         # Build service list

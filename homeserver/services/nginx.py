@@ -10,7 +10,6 @@ import docker
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import config as HS_CONFIG
 from services.base import BaseService
 
@@ -55,11 +54,7 @@ class NginxService(BaseService):
         # Paths
         self.nginx_dir = base_dir / "nginx"
         self.config_path = self.nginx_dir / "synapse.conf"
-        self.template_path = (
-            Path(__file__).parent.parent.parent
-            / "templates"
-            / "nginx_config_template.conf"
-        )
+        self.template_path = Path("templates") / "nginx_config_template.conf"
 
     def service_name(self) -> str:
         return "nginx"

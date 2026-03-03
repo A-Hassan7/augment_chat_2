@@ -5,9 +5,6 @@ Redis service for Synapse worker communication
 from pathlib import Path
 import time
 import docker
-import sys
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import config as HS_CONFIG
 from .base import BaseService, docker_client
 
