@@ -159,3 +159,19 @@ FROM bridge_manager.request_logs
 ORDER BY timestamp DESC
 LIMIT 20;
 ```
+
+### Request Logger UI
+
+A browser-based inspector for the `request_logs` table. Run it with:
+
+```bash
+python3 -m bridge_manager.request_logger_ui
+```
+
+Features:
+- Table view of all logged requests with filtering and column toggle
+- Click any row to open a **detail pullover** showing the raw incoming request, raw outgoing request, and response body side-by-side
+- JSON syntax highlighting in all three panes
+- Drag the top edge of the pullover to resize its height
+- Drag the dividers between the three panes to resize them horizontally
+- Dark/light theme toggle

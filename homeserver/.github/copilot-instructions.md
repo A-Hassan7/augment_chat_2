@@ -90,6 +90,7 @@ See `bridge_manager/appservice/README.md` and `bridge_manager/orchestrator/READM
 | `helpers/worker_manager.py` | CLI tool for scaling workers up/down |
 | `helpers/nginx_manager.py` | Regenerates and reloads Nginx upstream config |
 | `bridge_manager/appservice/appservice.py` | Two FastAPI proxy endpoints (HS→bridge, bridge→HS) |
+| `bridge_manager/request_logger_ui/` | Browser-based inspector for `request_logs` — run with `python3 -m bridge_manager.request_logger_ui` |
 | `bridge_manager/appservice/router.py` | `BridgeRouter` — 8-strategy bridge discovery |
 | `bridge_manager/appservice/registry.py` | `BridgeRegistry` — bridge lookup with caching |
 | `bridge_manager/orchestrator/orchestrator.py` | `BridgeOrchestrator` — full bridge container lifecycle |

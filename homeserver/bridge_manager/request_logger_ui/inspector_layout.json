@@ -1,0 +1,74 @@
+{
+    "columns": [
+        {
+            "key": "timestamp",
+            "label": "Timestamp",
+            "visible": true
+        },
+        {
+            "key": "source",
+            "label": "Source",
+            "visible": true
+        },
+        {
+            "key": "method",
+            "label": "Method",
+            "visible": true
+        },
+        {
+            "key": "path",
+            "label": "Path",
+            "visible": true
+        },
+        {
+            "key": "status_code",
+            "label": "Status",
+            "visible": true
+        },
+        {
+            "key": "discovery_method",
+            "label": "Discovery",
+            "visible": true
+        },
+        {
+            "key": "duration_ms",
+            "label": "Duration (ms)",
+            "visible": true
+        },
+        {
+            "key": "bridge_name",
+            "label": "Bridge",
+            "visible": true
+        },
+        {
+            "key": "forwarded_to",
+            "label": "Forwarded To",
+            "visible": true
+        },
+        {
+            "key": "error",
+            "label": "Error",
+            "visible": true
+        },
+        {
+            "key": "request_id",
+            "label": "Request ID",
+            "visible": false
+        },
+        {
+            "key": "direction",
+            "label": "Direction",
+            "visible": false
+        },
+        {
+            "key": "response_source",
+            "label": "Response Source",
+            "visible": true
+        },
+        {
+            "key": "query_params",
+            "label": "Query Params",
+            "visible": false
+        }
+    ]
+}

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{THEME}}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bridge Manager — Request Logs</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Apply theme before paint to avoid flash -->
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem("bm_inspector_theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ── Top bar ──────────────────────────────────────────────── -->
+  <header class="topbar">
+    <h1>Bridge Manager</h1>
+    <span class="subtitle">Request Log Inspector</span>
+
+    <button class="btn" id="col-panel-btn">⊞ Columns</button>
+    <button class="btn" id="theme-toggle">☾ Dark</button>
+  </header>
+
+  <!-- ── Column manager panel ─────────────────────────────────── -->
+  <div class="col-panel" id="col-panel">
+    <h3>Columns</h3>
+    <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:10px;">
+      Drag to reorder · Check to show
+    </p>
+    <ul class="col-list" id="col-list">
+      {{COLUMN_MANAGER_ITEMS}}
+    </ul>
+    <div class="col-panel-footer">
+      <button class="btn" id="cancel-col-btn">Cancel</button>
+      <button class="btn btn-primary" id="save-layout-btn">Save Layout</button>
+    </div>
+  </div>
+
+  <!-- ── Main content ─────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Filter bar -->
+    <section class="filter-bar">
+      <form method="GET" action="/">
+        <input type="hidden" name="page" value="1">
+
+        <div class="filter-group">
+          <label for="f-bridge">Bridge</label>
+          <select name="bridge_id" id="f-bridge">
+            {{BRIDGE_OPTIONS}}
+          </select>
+        </div>
+
+        <div class="filter-group wide">
+          <label for="f-path">Path contains</label>
+          <input type="text" name="path_filter" id="f-path"
+                 placeholder="/homeserver/_matrix/…"
+                 value="{{FILTER_PATH}}">
+        </div>
+
+        <div class="filter-group narrow">
+          <label for="f-status">Status</label>
+          <select name="status_code" id="f-status">
+            {{STATUS_OPTIONS}}
+          </select>
+        </div>
+
+        <div class="filter-group narrow">
+          <label for="f-source">Source</label>
+          <select name="source" id="f-source">
+            {{SOURCE_OPTIONS}}
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="f-from">From</label>
+          <input type="datetime-local" name="from_dt" id="f-from"
+                 value="{{FILTER_FROM}}">
+        </div>
+
+        <div class="filter-group">
+          <label for="f-to">To</label>
+          <input type="datetime-local" name="to_dt" id="f-to"
+                 value="{{FILTER_TO}}">
+        </div>
+
+        <div class="filter-actions">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <button type="button" class="btn" id="filter-reset">Clear</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <span>
+        <strong>{{TOTAL}}</strong> request{{TOTAL_PLURAL}} ·
+        page <strong>{{PAGE}}</strong> of <strong>{{PAGE_COUNT}}</strong>
+      </span>
+      <span style="color:var(--row-success-border)">● success (&lt;400)</span>
+      <span style="color:var(--row-fail-border)">● fail (≥400)</span>
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+      <div class="table-scroll">
+        <table id="logs">
+          <thead>
+            <tr>
+              {{TABLE_HEADERS}}
+            </tr>
+          </thead>
+          <tbody>
+            {{TABLE_ROWS}}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <nav class="pagination" aria-label="Pagination">
+        {{PAGINATION}}
+      </nav>
+    </div>
+
+  </main>
+
+  <!-- ── Pullover ──────────────────────────────────────────────── -->
+  <div class="pullover" id="pullover" role="complementary" aria-label="Request detail">
+    <div class="pullover-resize-handle" id="pullover-resize"></div>
+    <div class="pullover-topbar">
+      <span>Request Detail</span>
+      <span style="color:var(--text-muted);font-size:.7rem;font-weight:400;">
+        Click any row to inspect · ESC to close
+      </span>
+      <button class="pullover-close" id="pullover-close" aria-label="Close">✕</button>
+    </div>
+    <div class="pullover-panels" id="pullover-panels">
+      <div class="pullover-panel" id="panel-raw-in">
+        <h4>Raw Incoming Request</h4>
+        <pre id="pre-raw-in">(select a row)</pre>
+      </div>
+      <div class="panel-divider"></div>
+      <div class="pullover-panel" id="panel-raw-out">
+        <h4>Raw Outgoing Request</h4>
+        <pre id="pre-raw-out">(select a row)</pre>
+      </div>
+      <div class="panel-divider"></div>
+      <div class="pullover-panel" id="panel-response">
+        <h4>Response Body</h4>
+        <pre id="pre-response">(select a row)</pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
