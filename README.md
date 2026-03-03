@@ -27,3 +27,25 @@ Large Language Models can understand context and create human like responses. LL
 ### How: Messages -> Vectorstore -> Prompt Generation -> Response
 
 Using vectorstores, it's possible to inject relevent context from a large corpus of text into an LLM with a token limit. Summary chains can then be used to condense larger, relevent pieces of text, into consise bits of information that can be used by the LLM.
+
+---
+
+## Project Structure
+
+This repo is a monorepo containing three sub-projects:
+
+```
+augment_chat/                  ← monorepo root
+├── homeserver/                ← Matrix infrastructure (Synapse + bridge management)
+├── matrix_manager/            ← Orchestrates and manages homeserver deployments
+├── augment_chat/              ← AI pipeline (events → embeddings → suggestions) [root level for now]
+└── augment_chat.code-workspace
+```
+
+**`homeserver/`** — Deploys and manages a single Matrix homeserver. Runs Synapse, bridge containers, and the bridge manager proxy. See `homeserver/README.md`.
+
+**`matrix_manager/`** — Orchestration layer for managing a fleet of homeservers. Handles user assignment, routing, and capacity tracking. See `matrix_manager/README.md`.
+
+**`augment_chat/`** — AI pipeline. Ingests Matrix events, builds transcripts and embeddings, generates suggestions via LLM. See `docs/ARCHITECTURE.md`.
+
+Open `augment_chat.code-workspace` in VS Code to see all three projects. To work on a single project in isolation, open its subfolder directly.
