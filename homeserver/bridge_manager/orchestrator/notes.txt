@@ -1,0 +1,6 @@
+- where is the homeserver id provided to the bridge manager
+- how do bridge manager workers work? They're supposed to be appservice workers.
+
+- doploy a homeserver using `python deploy hs-001 --workers 3` where hs-001 is the homeserver name
+
+-   

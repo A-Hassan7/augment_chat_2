@@ -1,7 +1,7 @@
 id: "bridge_manager"
-url: "http://host.docker.internal:8080/homeserver"
-as_token: "as_token_test"
-hs_token: "hs_token_test"
+url: "http://bridge-manager:5000/homeserver"
+as_token: "as_token"
+hs_token: "hs_token"
 rate_limited: false
 sender_localpart: "_bridge_manager__" # Will result in @_bridge_manager:example.org
 namespaces:

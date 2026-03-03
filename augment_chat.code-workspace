@@ -1,0 +1,16 @@
+{
+    "folders": [
+        {
+            "name": "augment_chat",
+            "path": "augment_chat"
+        },
+        {
+            "name": "homeserver",
+            "path": "homeserver"
+        },
+        {
+            "name": "matrix_manager",
+            "path": "matrix_manager"
+        }
+    ]
+}

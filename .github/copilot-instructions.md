@@ -1,70 +1,97 @@
-# Copilot Instructions for Augment Chat
+# Copilot Instructions for Augment Chat Monorepo
 
-## Big Picture
-- **Purpose:** Backend that ingests Matrix-bridged chat events, builds transcripts + embeddings, and serves joke suggestions via FastAPI.
-- **Event-driven pipeline:** PostgreSQL logical replication → `event_processor` parses/store → `vector_store` builds transcripts/embeddings → `llm_service` and `suggestions_service` generate suggestions.
-- **Queues:** Work is distributed via Redis/RQ queues: `event_processor`, `vector_store`, `llm` (see `queue_controller/queue_controller.py`).
-- **Bridges:** WhatsApp and other platforms connect through Matrix Synapse bridges managed by `bridge_manager`.
+## What This Repo Is
+**Augment Chat** is a monorepo containing three sub-projects that together form a platform for bridging external chat platforms (WhatsApp, Telegram, etc.) into Matrix, processing those messages, and generating AI-powered suggestions.
 
-## Key Modules & Files
-- API: `api/main.py` FastAPI app exposing `/transcripts`, `/backfill_transcripts`, `/generate_suggestion`.
-- Event Processor: `event_processor/` handles replication triggers, parsing, storage; see `event_processor/README.MD`.
-- Vector Store: `vector_store/` transcripts, chunking, embeddings, enrichment; see `vector_store/README.md`.
-- LLM Service: `llm_service/` providers and async job handling via RQ; see `llm_service/README.md`.
-- Suggestions: `suggestions_service/` prompts and suggestion generation; `prompts.py`, `suggestions.py`.
-- Bridge Manager: `bridge_manager/` appservice integration, homeserver configs, and client; see `bridge_manager/appservice/*.py`.
-- Users: `users_service/` Matrix account creation/auth flows.
-- Config: `config.py` (global), plus per-module `config.py` files controlling DB/Redis and debug flags.
-- DB Layer: `*/database/` with `engine.py`, `models.py`, `repositories.py` per service.
-- Architecture Doc: `docs/ARCHITECTURE.md` high-level design and data flow.
+```
+augment_chat/                  ← monorepo root
+├── homeserver/                ← Matrix infrastructure (Synapse deployment + bridge management)
+├── matrix_manager/            ← Orchestrates and manages homeserver deployments
+├── augment_chat/              ← AI pipeline (events → embeddings → suggestions) [root level for now]
+└── augment_chat.code-workspace
+```
 
-## Conventions & Patterns
-- **Per-service isolation:** Each service has its own `database` package and repository layer. Follow this layout when adding new services.
-- **RQ queues via `QueueController`:** Use `QueueController().get_queue("vector_store")` etc. Respect `GlobalConfig.DEBUG_MODE` and `GlobalConfig.USE_FAKE_REDIS` for sync/testing.
-- **Interfaces:** Import service entry points via interface modules (e.g., `from vector_store import VectorStoreInterface`). Prefer these over direct class access.
-- **Enrichment:** Vector store supports user/profile enrichment. New enrichers should live under `vector_store/` and be wired through transcript building.
-- **Config first:** Check `GlobalConfig` and per-module `config.py` before adding env vars; keep flags centralized.
-- **FastAPI responses:** Return JSON-ready dicts/lists. API endpoints in `api/main.py` expect repository outputs directly.
+Open `augment_chat.code-workspace` to see all three projects in VS Code. To scope a coding agent to a single project, open that subfolder directly.
 
-## Dev Workflows
-- **Run API locally:**
-  ```zsh
-  python run_api.py
-  ```
-  - App runs `api.main:app` with Uvicorn. CORS allows `localhost:5500`.
+---
 
-- **Generate a suggestion (typical call):**
-  - `GET /generate_suggestion?room_id=<matrix_room_id>&until_message_event_id=<optional_event_id>`
-  - Endpoint polls RQ job and returns latest suggestions from `SuggestionsRepository`.
+## The Three Sub-Projects
 
-- **Backfill transcripts:**
-  - `POST /backfill_transcripts?room_id=<matrix_room_id>` triggers `vector_store.backfill_room(room_id)`.
+### 1. `homeserver/`
+Manages a single Matrix homeserver deployment. Responsible for:
+- Deploying Synapse + workers + Postgres + monitoring via Docker
+- Running the **bridge manager appservice** — a FastAPI proxy that sits between Synapse and individual bridge containers
+- Provisioning and managing bridge containers (WhatsApp, etc.) via the orchestrator
 
-- **Queues & testing:**
-  - For synchronous execution during dev/tests, set debug to use `FakeStrictRedis` via `GlobalConfig` flags. Workers are managed per queue.
+**Entry points:**
+- `homeserver/deploy.py` — deploys the Synapse stack
+- `homeserver/run_bridge_manager.py` — starts the bridge manager appservice
 
-## Integrations & Data Flow
-- **Matrix Synapse:** Upstream message source; events replicated into local DB (`event_json`).
-- **PostgreSQL logical replication:** Inserts trigger notifications consumed by `event_processor` to parse and store into `parsed_messages` and `processed_events`.
-- **Redis/RQ:** Asynchronous job dispatch for event → vector → LLM → suggestion pipeline.
+**Has its own:** `.env`, `config.py`, `requirements.txt`, `README.md`, `.github/copilot-instructions.md`
 
-## Examples You Can Follow
-- **API to Vector Store:** `api/main.py:get_transcripts` calls `VectorStoreInterface.get_transcripts_by_room_id(room_id, limit)` and returns plain JSON.
-- **Suggestion Job:** `api/main.py:generate_suggestion` enqueues `Suggestions.generate_jokes(room_id, until_message_event_id)` and polls status for up to ~20s.
-- **Queue usage:** `queue_controller/queue_controller.py` shows queue names and how to get `Queue` and `Worker` instances.
+> When working on `homeserver/` open it as an isolated folder so the agent uses its own instructions file.
 
-## When Adding Features
-- Add new service with `interface.py`, `config.py`, and `database/` (`engine.py`, `models.py`, `repositories.py`).
-- Wire async tasks through RQ queues; update `QueueController.QUEUES` if introducing a new queue.
-- Prefer repository methods for DB interactions; keep SQLAlchemy models in per-service `models.py`.
-- Use existing endpoint patterns for API: simple params, return JSON dicts, poll jobs if async.
+---
+
+### 2. `matrix_manager/`
+Orchestrates **multiple homeserver deployments** from a central place. Responsible for:
+- Provisioning new homeserver instances
+- Managing capacity and routing users to the right homeserver
+- High-level homeserver lifecycle (create, scale, destroy)
+
+> This project is earlier in development. Check `matrix_manager/` for current state.
+
+---
+
+### 3. `augment_chat/` (root level)
+The AI pipeline that processes Matrix chat events and generates suggestions. Responsible for:
+- Ingesting Matrix events via PostgreSQL logical replication
+- Parsing, storing, and building transcripts + embeddings
+- Generating AI suggestions via LLM
+
+**Key modules:** `api/`, `event_processor/`, `vector_store/`, `llm_service/`, `suggestions_service/`, `users_service/`, `bridge_manager/`, `queue_controller/`
+
+---
+
+## How The Projects Relate
+
+```
+matrix_manager
+    └── provisions and manages → homeserver instances
+                                      └── Synapse + bridge manager
+                                                └── bridges (WhatsApp etc.)
+                                                        └── Matrix events
+                                                                └── augment_chat pipeline
+                                                                        └── AI suggestions
+```
+
+---
+
+## Workspace & Dev Setup
+
+```bash
+# Open full monorepo
+code augment_chat.code-workspace
+
+# Work on a single project in isolation
+code homeserver/
+code matrix_manager/
+```
+
+Each sub-project manages its own dependencies and environment. See the `README.md` inside each subfolder for setup instructions.
+
+---
 
 ## Gotchas
-- `GlobalConfig.DEBUG_MODE` affects RQ `is_async`; verify before assuming background processing.
-- Per-module configs may override globals; check local `config.py` in the service.
-- Matrix/bridge configs live under `bridge_manager/appservice`; ensure homeserver/registration files align when bridging.
+- `homeserver/` was previously located at `matrix_manager/homeserver/` — it has been moved to the repo root.
+- The `augment_chat` sub-project code currently lives at the repo root (not in an `augment_chat/` subfolder). This will be reorganised in future.
+- Each sub-project has its own `.env` file — do not mix environment variables between projects.
+- When making cross-project changes, use the full workspace (`augment_chat.code-workspace`) so all paths resolve correctly.
 
-## Quick Pointers
-- Start with `docs/ARCHITECTURE.md` for system flow.
-- Inspect `event_processor/README.MD`, `vector_store/README.md`, `llm_service/README.md` for concrete setup steps.
-- Use `run_api.py` for quick API brings-up while developing.
+---
+
+## Keeping This File Up To Date
+Update this file when:
+- A new sub-project is added to the monorepo
+- A sub-project is moved or renamed
+- The relationship between projects changes significantly

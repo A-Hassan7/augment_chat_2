@@ -1,0 +1,3 @@
+This isn't in use right now. Bridge clients are supposed to serve as interfaces that abstract the logic in communicating with the individual bridges. So if I have a whatsapp bridge running and want to login a user the whatsapp client will abstract this. 
+
+Previously this was done by sending messages to the bridge through it's chat in the homeserver. I'll see if there's a better way to implement this later.
