@@ -12,6 +12,8 @@ Key responsibilities:
 - Identify which bridge a request should be routed to
 """
 
+import asyncio
+from typing import Optional
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -22,11 +24,15 @@ from bridge_manager.appservice.models import RequestSource
 from bridge_manager.appservice.router import BridgeRouter
 from bridge_manager.appservice.registry import BridgeRegistry
 from bridge_manager.appservice.token_manager import TokenManager
+from bridge_manager.database.repositories import BridgeManagerWorkerRepository
 from bridge_manager.errors import (
     BridgeNotFoundError,
     BridgeRoutingError,
     AuthenticationError,
 )
+
+# How often (in seconds) each instance updates its heartbeat in the DB
+_HEARTBEAT_INTERVAL = 30
 
 
 app = FastAPI(
@@ -39,20 +45,73 @@ app = FastAPI(
 logger = BridgeLogger()
 token_manager = TokenManager()
 
+# Background task handle
+_heartbeat_task: Optional[asyncio.Task] = None
+
+
+async def _heartbeat_loop():
+    """Periodically refresh last_heartbeat for this instance."""
+    while True:
+        await asyncio.sleep(_HEARTBEAT_INTERVAL)
+        try:
+            BridgeManagerWorkerRepository.update_heartbeat(
+                BRIDGE_MANAGER_CONFIG.INSTANCE_ID
+            )
+        except Exception as e:
+            logger.log_error(f"Heartbeat update failed: {e}")
+
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize appservice on startup."""
+    global _heartbeat_task
     logger.log_info("Bridge Manager Appservice starting...")
     logger.log_info(
         f"Listening on {BRIDGE_MANAGER_CONFIG.HOST}:{BRIDGE_MANAGER_CONFIG.PORT}"
     )
 
+    # Register this instance in bridge_manager_workers
+    try:
+        BridgeManagerWorkerRepository.get_or_create(
+            instance_id=BRIDGE_MANAGER_CONFIG.INSTANCE_ID,
+            host=BRIDGE_MANAGER_CONFIG.HOST,
+            port=BRIDGE_MANAGER_CONFIG.PORT,
+            homeserver_id=BRIDGE_MANAGER_CONFIG.HOMESERVER_ID,
+        )
+        logger.log_info(
+            f"Worker registered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}"
+        )
+    except Exception as e:
+        logger.log_error(f"Failed to register worker in DB: {e}")
+
+    # Start periodic heartbeat
+    _heartbeat_task = asyncio.create_task(_heartbeat_loop())
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
+    global _heartbeat_task
     logger.log_info("Bridge Manager Appservice shutting down...")
+
+    # Stop heartbeat loop
+    if _heartbeat_task:
+        _heartbeat_task.cancel()
+        try:
+            await _heartbeat_task
+        except asyncio.CancelledError:
+            pass
+
+    # Mark this instance as inactive
+    try:
+        BridgeManagerWorkerRepository.update_status(
+            BRIDGE_MANAGER_CONFIG.INSTANCE_ID, "inactive"
+        )
+        logger.log_info(
+            f"Worker deregistered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}"
+        )
+    except Exception as e:
+        logger.log_error(f"Failed to deregister worker in DB: {e}")
 
 
 @app.get("/health")

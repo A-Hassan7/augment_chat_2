@@ -99,7 +99,7 @@ def deploy_bridge_manager_instance(
 
 def remove_bridge_manager_instance(homeserver_id: str, instance_num: int):
     """
-    Remove a single bridge manager instance container.
+    Remove a single bridge manager instance container and mark it inactive in the DB.
 
     Args:
         homeserver_id: The homeserver ID
@@ -113,6 +113,15 @@ def remove_bridge_manager_instance(homeserver_id: str, instance_num: int):
         print(f"  ✓ Removed bridge manager instance {instance_num}")
     except docker.errors.NotFound:
         pass
+
+    # Mark the worker record inactive so the DB stays in sync
+    instance_id = f"{homeserver_id}_bm_{instance_num}"
+    try:
+        from bridge_manager.database.repositories import BridgeManagerWorkerRepository
+
+        BridgeManagerWorkerRepository.update_status(instance_id, "inactive")
+    except Exception as e:
+        print(f"  ! Could not update worker status in DB for {instance_id}: {e}")
 
 
 def update_nginx_bm_config(
