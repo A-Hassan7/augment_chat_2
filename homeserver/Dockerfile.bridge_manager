@@ -1,0 +1,24 @@
+# Bridge Manager Appservice Docker Image
+#
+# Builds a containerized version of the bridge manager for horizontal scaling.
+# Multiple instances can be deployed behind an nginx load balancer.
+#
+# Build from the homeserver directory:
+#   docker build -f Dockerfile.bridge_manager -t bridge-manager:latest .
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies first (layer cache optimization)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Bridge manager listens on this port inside the container
+EXPOSE 5001
+
+# Start the bridge manager appservice
+CMD ["python", "run_bridge_manager.py"]

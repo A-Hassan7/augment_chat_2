@@ -174,7 +174,7 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
     headers["authorization"] = f"Bearer {bridge.as_token}"
 
     # Build target URL
-    bridge_url = f"http://localhost:{bridge.port}"
+    bridge_url = f"http://{BRIDGE_MANAGER_CONFIG.BRIDGE_HOST}:{bridge.port}"
     target_url = f"{bridge_url}/_matrix/app/v1/{path}"
 
     # Log the outgoing (forwarded) request

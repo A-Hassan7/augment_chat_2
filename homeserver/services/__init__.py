@@ -16,6 +16,7 @@ from .worker import WorkerService
 from .nginx import NginxService
 from .prometheus import PrometheusService
 from .grafana import GrafanaService
+from .bridge_manager import BridgeManagerService, BridgeManagerNginxService
 
 __all__ = [
     "BaseService",
@@ -26,4 +27,6 @@ __all__ = [
     "NginxService",
     "PrometheusService",
     "GrafanaService",
+    "BridgeManagerService",
+    "BridgeManagerNginxService",
 ]
