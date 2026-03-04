@@ -145,6 +145,11 @@ class BridgeManagerConfig:
         "BRIDGE_MANAGER_HOSTNAME", "host.docker.internal"
     )
 
+    # Host used by the appservice proxy to reach bridge containers.
+    # Default is "localhost" (running natively on the host).
+    # Set to "host.docker.internal" when running inside Docker containers.
+    BRIDGE_HOST: str = _get_env("BRIDGE_HOST", "localhost")
+
 
 # Global instance
 BRIDGE_MANAGER_CONFIG = BridgeManagerConfig()
@@ -168,6 +173,7 @@ REDIS_IMAGE = "redis:7-alpine"
 NGINX_IMAGE = "nginx:alpine"
 PROMETHEUS_IMAGE = "prom/prometheus:latest"
 GRAFANA_IMAGE = "grafana/grafana:latest"
+BRIDGE_MANAGER_IMAGE = "bridge-manager:latest"  # Built from Dockerfile.bridge_manager
 
 # ========================================
 # Network Ports
@@ -190,6 +196,11 @@ REDIS_PORT = 6379  # Redis (for workers)
 # Nginx
 NGINX_HTTP_PORT = 80  # Nginx load balancer
 NGINX_STATUS_PORT = 8080  # Nginx metrics endpoint
+
+# Bridge Manager Nginx (separate LB for bridge manager instances)
+BRIDGE_MANAGER_NGINX_PORT = 5000  # External port of the bridge manager LB
+BRIDGE_MANAGER_NGINX_STATUS_PORT = 5080  # Status/metrics port
+BRIDGE_MANAGER_INTERNAL_PORT = 5001  # Port each bridge manager instance listens on
 
 # Workers
 WORKER_BASE_PORT = 8081  # Starting port for worker HTTP endpoints

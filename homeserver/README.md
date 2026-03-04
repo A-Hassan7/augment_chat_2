@@ -27,18 +27,20 @@ Automated deployment and management of a Matrix Synapse homeserver with optional
                  │   └────────────────┘   └─────────┘                │
                  └─────────────────────────────────────────────────────┘
                                          │
-                             ┌───────────▼───────────┐
-                             │   Bridge Manager      │
-                             │   Appservice :5001    │
-                             │   (proxy layer)       │
-                             └──────────┬────────────┘
-                                        │
-                         ┌──────────────┼──────────────┐
-                         ▼              ▼              ▼
-                   ┌──────────┐  ┌──────────┐  ┌──────────┐
-                   │ WhatsApp │  │ Telegram │  │  Signal  │
-                   │  Bridge  │  │  Bridge  │  │  Bridge  │
-                   └──────────┘  └──────────┘  └──────────┘
+                         ┌───────────────▼────────────────┐
+                         │   nginx_bm (optional LB) :5000 │
+                         └───┬───────────────────────┬────┘
+                             ▼                       ▼
+                  ┌──────────────────┐  ┌──────────────────┐
+                  │  bridge_manager_1│  │  bridge_manager_N│
+                  │  :5001           │  │  :5001           │  ...
+                  └────────┬─────────┘  └────────┬─────────┘
+                           │  (shared DB + Docker socket)
+                           ▼
+                  ┌──────────┐  ┌──────────┐  ┌──────────┐
+                  │ WhatsApp │  │ Telegram │  │  Signal  │
+                  │  Bridge  │  │  Bridge  │  │  Bridge  │
+                  └──────────┘  └──────────┘  └──────────┘
 ```
 
 > This project is **self-contained** — it has its own virtualenv, dependencies, database schema, and config. Do not import from the parent `augment_chat/` project.
@@ -73,11 +75,20 @@ cp .env.example .env
 
 ```bash
 # Monolith (no workers)
-python3 deploy.py
+python3 deploy.py hs-001
 
-# Or deploy with workers programmatically
+# With Synapse workers
+python3 deploy.py hs-001 --workers 3
+
+# With bridge manager instances (N stateless proxies behind an nginx LB)
+python3 deploy.py hs-001 --bridge-managers 3
+
+# Both workers and bridge manager instances
+python3 deploy.py hs-001 --workers 3 --bridge-managers 3
+
+# Or deploy programmatically
 from deploy import DeploymentPlan
-plan = DeploymentPlan(homeserver_id="hs-001", domain="localhost", num_workers=3)
+plan = DeploymentPlan(homeserver_id="hs-001", domain="localhost", num_workers=3, num_bridge_managers=3)
 plan.execute()
 ```
 
@@ -92,6 +103,8 @@ This deploys the following Docker containers onto an isolated network:
 | `{id}_nginx` | 80 / 8080 | Load balancer / metrics |
 | `{id}_prometheus` | 9090 | Metrics collection |
 | `{id}_grafana` | 3000 | Monitoring dashboards |
+| `{id}_nginx_bm` | 5000 / 5080 | Bridge manager LB (optional, `--bridge-managers N`) |
+| `{id}_bridge_manager_N` | — | Bridge manager instance (optional) |
 
 All persistent data is written to `deployments/{homeserver-id}/`.
 
@@ -106,6 +119,40 @@ python3 helpers/worker_manager.py hs-001 --status     # check status
 When scaling, the system automatically updates the Synapse `instance_map`, regenerates the Nginx upstream config, and reloads both services.
 
 Workers use **consistent IP hashing** in Nginx for session affinity.
+
+### Scaling Bridge Manager Instances
+
+When deployed with `--bridge-managers N`, multiple stateless bridge manager appservice
+proxy containers run behind a dedicated nginx load balancer (`{id}_nginx_bm`).
+All instances share the same PostgreSQL database so any instance can handle any request.
+
+```bash
+# Scale to 5 bridge manager instances (nginx LB reloads automatically)
+python3 helpers/bridge_manager_scaler.py hs-001 --scale 5
+
+# Scale back to 1
+python3 helpers/bridge_manager_scaler.py hs-001 --scale 1
+
+# Check instance status
+python3 helpers/bridge_manager_scaler.py hs-001 --status
+```
+
+**Note:** Before deploying containerised bridge managers, build the image from the homeserver directory:
+
+```bash
+docker build -f Dockerfile.bridge_manager -t bridge-manager:latest .
+```
+
+Update `bridge-manager-registration.yaml` to point at the nginx LB so Synapse sends
+requests to all instances:
+
+```yaml
+url: "http://{homeserver_id}_nginx_bm:5000/homeserver"
+```
+
+Set `BRIDGE_HOST=host.docker.internal` in `.env` (or the actual host IP on Linux) so
+each containerised bridge manager instance can reach bridge containers via their
+host-exposed ports.
 
 ---
 

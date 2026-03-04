@@ -120,6 +120,67 @@ class BridgeManagerWorkerRepository:
             return worker
 
     @staticmethod
+    def get_or_create(
+        instance_id: str,
+        host: str,
+        port: int,
+        homeserver_id: str,
+    ) -> BridgeManagerWorker:
+        """
+        Get existing worker record or create a new one, then mark it active.
+
+        Called on instance startup so every run is reflected in the DB.
+        If the instance previously existed (e.g. container restart) its host,
+        port, and status are refreshed.
+        """
+        with DatabaseEngine.get_session() as session:
+            stmt = select(BridgeManagerWorker).where(
+                BridgeManagerWorker.instance_id == instance_id
+            )
+            worker = session.execute(stmt).scalar_one_or_none()
+            if worker:
+                worker.host = host
+                worker.port = port
+                worker.status = "active"
+                worker.last_heartbeat = datetime.now(timezone.utc)
+                session.flush()
+            else:
+                worker = BridgeManagerWorker(
+                    instance_id=instance_id,
+                    host=host,
+                    port=port,
+                    homeserver_id=homeserver_id,
+                    status="active",
+                    last_heartbeat=datetime.now(timezone.utc),
+                )
+                session.add(worker)
+                session.flush()
+            return worker
+
+    @staticmethod
+    def update_status(instance_id: str, status: str) -> bool:
+        """
+        Update the status of a worker instance.
+
+        Args:
+            instance_id: Worker instance ID
+            status: New status (e.g. "active", "inactive")
+
+        Returns:
+            True if the record was found and updated, False otherwise
+        """
+        with DatabaseEngine.get_session() as session:
+            stmt = select(BridgeManagerWorker).where(
+                BridgeManagerWorker.instance_id == instance_id
+            )
+            worker = session.execute(stmt).scalar_one_or_none()
+            if worker:
+                worker.status = status
+                session.flush()
+                return True
+            return False
+
+    @staticmethod
     def update_heartbeat(instance_id: str) -> bool:
         """Update last heartbeat for a worker."""
         with DatabaseEngine.get_session() as session:

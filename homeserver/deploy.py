@@ -20,6 +20,8 @@ from services import (
     NginxService,
     PrometheusService,
     GrafanaService,
+    BridgeManagerService,
+    BridgeManagerNginxService,
 )
 
 docker_client = docker.from_env()
@@ -37,11 +39,13 @@ class DeploymentPlan:
     """
 
     def __init__(
-        self, homeserver_id: str, domain: str = "localhost", num_workers: int = 0
+        self, homeserver_id: str, domain: str = "localhost", num_workers: int = 0,
+        num_bridge_managers: int = 0,
     ):
         self.homeserver_id = homeserver_id
         self.domain = domain
         self.num_workers = num_workers
+        self.num_bridge_managers = num_bridge_managers
 
         # Setup paths
         self.base_dir = Path("deployments") / homeserver_id
@@ -127,6 +131,25 @@ class DeploymentPlan:
             )
         )
 
+        # Bridge Manager instances (optional — only when num_bridge_managers > 0)
+        if self.num_bridge_managers > 0:
+            self.services.append(
+                BridgeManagerNginxService(
+                    self.homeserver_id,
+                    self.base_dir,
+                    self.network_name,
+                    num_instances=self.num_bridge_managers,
+                )
+            )
+            self.services.append(
+                BridgeManagerService(
+                    self.homeserver_id,
+                    self.base_dir,
+                    self.network_name,
+                    num_instances=self.num_bridge_managers,
+                )
+            )
+
     def validate(self) -> bool:
         """
         Validate all service configurations before deployment
@@ -152,6 +175,7 @@ class DeploymentPlan:
             f"Deployment Plan: {self.homeserver_id}",
             f"Domain: {self.domain}",
             f"Workers: {self.num_workers}",
+            f"Bridge Manager Instances: {self.num_bridge_managers}",
             "",
             "Services to deploy:",
         ]
@@ -237,6 +261,7 @@ class DeploymentPlan:
             "homeserver_id": self.homeserver_id,
             "domain": self.domain,
             "num_workers": self.num_workers,
+            "num_bridge_managers": self.num_bridge_managers,
             "services": [s.service_name() for s in self.deployed_services],
             "status": self.status(),
         }
@@ -252,6 +277,16 @@ if __name__ == "__main__":
     parser.add_argument("homeserver_id", help="Homeserver ID (e.g., hs-001)")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument(
+        "--bridge-managers",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Number of bridge manager instances to deploy behind an nginx LB "
+            "(0 = do not deploy bridge manager, default)"
+        ),
+    )
+    parser.add_argument(
         "--validate-only", action="store_true", help="Only validate, don't deploy"
     )
     parser.add_argument(
@@ -260,7 +295,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    plan = DeploymentPlan(args.homeserver_id, num_workers=args.workers)
+    plan = DeploymentPlan(
+        args.homeserver_id,
+        num_workers=args.workers,
+        num_bridge_managers=args.bridge_managers,
+    )
 
     if args.status:
         print(plan.summary())
