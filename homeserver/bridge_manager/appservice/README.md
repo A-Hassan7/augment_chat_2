@@ -31,7 +31,8 @@ A pure proxy layer that sits between the Matrix homeserver and bridge instances,
   │              │  1. Authenticate   │  validate hs_token              │
   │              │  2. Route request  │  BridgeRouter → identify bridge │
   │              │  3. Swap token     │  hs_token → bridge's as_token   │
-  │              │  4. Forward        │  → http://{bridge.ip}:{bridge.port}│
+  │              │  4. Transform      │  HomeserverRequestHandler       │
+  │              │  5. Forward        │  → http://{bridge.ip}:{bridge.port}│
   │              └─────────┬──────────┘                                │
   │                        │                                            │
   │   GET /bridge/{id}/_matrix/{path}                                  │
@@ -40,7 +41,8 @@ A pure proxy layer that sits between the Matrix homeserver and bridge instances,
   │              │  1. Authenticate   │  validate bridge's as_token    │
   │              │  2. Lookup bridge  │  BridgeRegistry → by URL param │
   │              │  3. Swap token     │  as_token → bridge manager's   │
-  │              │  4. Forward        │  → homeserver URL              │
+  │              │  4. Transform      │  BridgeRequestHandler          │
+  │              │  5. Forward        │  → homeserver URL              │
   │              └─────────┬──────────┘                                │
   │                        │                                            │
   │              ┌─────────▼──────────┐                                │
@@ -92,6 +94,76 @@ A pure proxy layer that sits between the Matrix homeserver and bridge instances,
 | `registry.py` | `BridgeRegistry` — bridge lookup and caching (used for bridge → homeserver direction) |
 | `token_manager.py` | `TokenManager` — validates tokens and handles the token swap logic |
 | `models.py` | Enums: `RequestSource`, `BridgeDiscoveryMethod` |
+| `handlers/` | Path-specific request transformation pipeline (see below) |
+
+### `handlers/` — Request transformation pipeline
+
+After authentication, bridge/homeserver lookup, and token swap the appservice wraps the request data in a `ProxyContext` and passes it through a handler. The handler may return a modified copy of the context; the appservice then uses the final context to perform the HTTP forward.
+
+```
+handlers/
+├── __init__.py
+├── base.py               — ProxyContext dataclass, PathRouter, RequestHandlerBase
+├── homeserver_handler.py — HomeserverRequestHandler  (Homeserver → Bridge)
+└── bridge_handler.py     — BridgeRequestHandler      (Bridge → Homeserver)
+```
+
+#### `ProxyContext`
+
+Immutable-friendly dataclass (use `dataclasses.replace()` to produce modified copies):
+
+| Field | Description |
+|---|---|
+| `method` | HTTP method |
+| `path` | Request path |
+| `headers` | Request headers (already token-swapped) |
+| `query_params` | Query string parameters |
+| `body` | Raw request body bytes |
+| `target_url` | Full URL the request will be forwarded to |
+
+#### `PathRouter`
+
+Maps compiled regex patterns to handler callables.  Patterns are checked in registration order; the first match wins.
+
+```python
+router = PathRouter()
+router.register(r"client/versions$", handler_fn)
+```
+
+#### `RequestHandlerBase`
+
+Abstract base class.  Subclasses implement `_register_routes()` to associate regex patterns with handler methods.
+
+```python
+class MyHandler(RequestHandlerBase):
+    def _register_routes(self) -> None:
+        self.router.register(r"some/path$", self._handle_some_path)
+
+    async def _handle_some_path(self, context: ProxyContext) -> ProxyContext:
+        # return a modified copy
+        return replace(context, query_params={...})
+```
+
+#### Adding a new path-specific transform
+
+1. Open the relevant handler (`homeserver_handler.py` for Homeserver → Bridge, `bridge_handler.py` for Bridge → Homeserver).
+2. Add an async handler method that accepts and returns a `ProxyContext`.
+3. Register it in `_register_routes()` with a regex pattern.
+
+Example — stripping a query parameter:
+
+```python
+from dataclasses import replace
+from .base import ProxyContext, RequestHandlerBase
+
+class BridgeRequestHandler(RequestHandlerBase):
+    def _register_routes(self) -> None:
+        self.router.register(r"client/versions$", self._handle_client_versions)
+
+    async def _handle_client_versions(self, context: ProxyContext) -> ProxyContext:
+        filtered = {k: v for k, v in context.query_params.items() if k != "user_id"}
+        return replace(context, query_params=filtered)
+```
 
 ---
 
@@ -111,8 +183,9 @@ The homeserver sends Matrix appservice events to the bridge manager instead of d
    - Owner username fallback
 3. **Validates token** — confirms the token matches the identified bridge's `hs_token`.
 4. **Swaps token** — replaces `hs_token` with the bridge's `as_token` so the bridge accepts the request.
-5. **Forwards** — sends the modified request to `http://localhost:{bridge.port}/_matrix/app/v1/{path}`.
-6. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
+5. **Transforms** — passes the request through `HomeserverRequestHandler`; any registered path handler may modify the method, headers, query params, body, or target URL.
+6. **Forwards** — sends the modified request to `http://localhost:{bridge.port}/_matrix/app/v1/{path}`.
+7. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
 
 ## Request Flow: Bridge → Homeserver
 
@@ -122,8 +195,9 @@ Bridges are configured to send their outbound Matrix API calls to the bridge man
 2. **Looks up bridge** — finds the bridge by `bridge_id` in the URL via `BridgeRegistry`. Falls back to token-based lookup if the ID isn't found.
 3. **Validates token** — confirms the token matches the bridge's registered `as_token`.
 4. **Swaps token** — replaces the bridge's `as_token` with the bridge manager's own `AS_TOKEN` so the homeserver recognises it as a legitimate registered appservice.
-5. **Forwards** — sends the modified request to `{homeserver.url}/_matrix/{path}`.
-6. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
+5. **Transforms** — passes the request through `BridgeRequestHandler`; any registered path handler may modify the method, headers, query params, body, or target URL (e.g. stripping `user_id` from `/_matrix/client/versions`).
+6. **Forwards** — sends the modified request to `{homeserver.url}/_matrix/{path}`.
+7. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
 
 ---
 

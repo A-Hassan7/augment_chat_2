@@ -24,6 +24,11 @@ from bridge_manager.appservice.models import RequestSource
 from bridge_manager.appservice.router import BridgeRouter
 from bridge_manager.appservice.registry import BridgeRegistry
 from bridge_manager.appservice.token_manager import TokenManager
+from bridge_manager.appservice.handlers import (
+    ProxyContext,
+    HomeserverRequestHandler,
+    BridgeRequestHandler,
+)
 from bridge_manager.database.repositories import BridgeManagerWorkerRepository
 from bridge_manager.errors import (
     BridgeNotFoundError,
@@ -44,6 +49,10 @@ app = FastAPI(
 # Initialize components
 logger = BridgeLogger()
 token_manager = TokenManager()
+
+# Request handlers — apply path-specific transforms before forwarding
+homeserver_request_handler = HomeserverRequestHandler()
+bridge_request_handler = BridgeRequestHandler()
 
 # Background task handle
 _heartbeat_task: Optional[asyncio.Task] = None
@@ -232,27 +241,40 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
     bridge_url = f"http://{BRIDGE_MANAGER_CONFIG.BRIDGE_HOST}:{bridge.port}"
     target_url = f"{bridge_url}/_matrix/app/v1/{path}"
 
+    # Step 4: Apply path-specific transforms via the homeserver request handler
+    context = ProxyContext(
+        method=method,
+        path=path,
+        headers=headers,
+        query_params=query_params,
+        body=body,
+        target_url=target_url,
+    )
+    context = await homeserver_request_handler.handle(context)
+
     # Log the outgoing (forwarded) request
     request_tracker.log_outgoing_request(
-        method=method,
-        url=target_url,
-        headers=headers,
-        body=body,
-        query_params=query_params,
+        method=context.method,
+        url=context.target_url,
+        headers=context.headers,
+        body=context.body,
+        query_params=context.query_params,
     )
 
-    # Step 4: Forward request to bridge
-    logger.log_info(f"Proxying {method} request to bridge {bridge_id} at {target_url}")
+    # Step 5: Forward request to bridge
+    logger.log_info(
+        f"Proxying {context.method} request to bridge {bridge_id} at {context.target_url}"
+    )
 
     async with httpx.AsyncClient() as client:
         try:
             # Forward the request
             response = await client.request(
-                method=method,
-                url=target_url,
-                params=query_params,
-                headers=headers,
-                content=body,
+                method=context.method,
+                url=context.target_url,
+                params=context.query_params,
+                headers=context.headers,
+                content=context.body,
                 timeout=30.0,
             )
 
@@ -264,7 +286,7 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
             )
 
             logger.log_info(
-                f"Successfully proxied {method} request to bridge {bridge_id}, "
+                f"Successfully proxied {context.method} request to bridge {bridge_id}, "
                 f"status: {response.status_code}"
             )
 
@@ -416,29 +438,40 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
     # Build target URL to homeserver
     target_url = f"{homeserver.url}/_matrix/{path}"
 
+    # Step 4: Apply path-specific transforms via the bridge request handler
+    context = ProxyContext(
+        method=method,
+        path=path,
+        headers=headers,
+        query_params=query_params,
+        body=body,
+        target_url=target_url,
+    )
+    context = await bridge_request_handler.handle(context)
+
     # Log the outgoing (forwarded) request
     request_tracker.log_outgoing_request(
-        method=method,
-        url=target_url,
-        headers=headers,
-        body=body,
-        query_params=query_params,
+        method=context.method,
+        url=context.target_url,
+        headers=context.headers,
+        body=context.body,
+        query_params=context.query_params,
     )
 
-    # Step 4: Forward request to homeserver
+    # Step 5: Forward request to homeserver
     logger.log_info(
-        f"Proxying {method} request from bridge {bridge.id} to homeserver at {target_url}"
+        f"Proxying {context.method} request from bridge {bridge.id} to homeserver at {context.target_url}"
     )
 
     async with httpx.AsyncClient() as client:
         try:
             # Forward the request
             response = await client.request(
-                method=method,
-                url=target_url,
-                params=query_params,
-                headers=headers,
-                content=body,
+                method=context.method,
+                url=context.target_url,
+                params=context.query_params,
+                headers=context.headers,
+                content=context.body,
                 timeout=30.0,
             )
 
@@ -450,7 +483,7 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
             )
 
             logger.log_info(
-                f"Successfully proxied {method} request from bridge {bridge.id} to homeserver, "
+                f"Successfully proxied {context.method} request from bridge {bridge.id} to homeserver, "
                 f"status: {response.status_code}"
             )
 
