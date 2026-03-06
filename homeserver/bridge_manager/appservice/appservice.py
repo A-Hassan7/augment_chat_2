@@ -26,8 +26,8 @@ from bridge_manager.appservice.registry import BridgeRegistry
 from bridge_manager.appservice.token_manager import TokenManager
 from bridge_manager.appservice.handlers import (
     ProxyContext,
-    HomeserverRequestHandler,
-    BridgeRequestHandler,
+    BridgeHandlerRegistry,
+    HomeserverHandlerRegistry,
 )
 from bridge_manager.database.repositories import BridgeManagerWorkerRepository
 from bridge_manager.errors import (
@@ -49,10 +49,6 @@ app = FastAPI(
 # Initialize components
 logger = BridgeLogger()
 token_manager = TokenManager()
-
-# Request handlers — apply path-specific transforms before forwarding
-homeserver_request_handler = HomeserverRequestHandler()
-bridge_request_handler = BridgeRequestHandler()
 
 # Background task handle
 _heartbeat_task: Optional[asyncio.Task] = None
@@ -250,7 +246,7 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
         body=body,
         target_url=target_url,
     )
-    context = await homeserver_request_handler.handle(context)
+    context = await HomeserverHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
 
     # Log the outgoing (forwarded) request
     request_tracker.log_outgoing_request(
@@ -447,7 +443,7 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
         body=body,
         target_url=target_url,
     )
-    context = await bridge_request_handler.handle(context)
+    context = await BridgeHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
 
     # Log the outgoing (forwarded) request
     request_tracker.log_outgoing_request(

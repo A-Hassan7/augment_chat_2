@@ -98,14 +98,19 @@ A pure proxy layer that sits between the Matrix homeserver and bridge instances,
 
 ### `handlers/` — Request transformation pipeline
 
-After authentication, bridge/homeserver lookup, and token swap the appservice wraps the request data in a `ProxyContext` and passes it through a handler. The handler may return a modified copy of the context; the appservice then uses the final context to perform the HTTP forward.
+After authentication, bridge/homeserver lookup, and token swap the appservice wraps the request data in a `ProxyContext` and passes it through a handler selected by bridge type.  The handler may return a modified copy of the context; the appservice then uses the final context to perform the HTTP forward.
 
 ```
 handlers/
 ├── __init__.py
-├── base.py               — ProxyContext dataclass, PathRouter, RequestHandlerBase
-├── homeserver_handler.py — HomeserverRequestHandler  (Homeserver → Bridge)
-└── bridge_handler.py     — BridgeRequestHandler      (Bridge → Homeserver)
+├── base.py                  — ProxyContext dataclass, PathRouter, RequestHandlerBase
+├── bridge_handler.py        — BridgeRequestHandler      (Bridge → HS, generic)
+├── homeserver_handler.py    — HomeserverRequestHandler  (HS → Bridge, generic)
+├── bridge_types/
+│   ├── __init__.py          — BridgeHandlerRegistry
+│   └── whatsapp.py          — WhatsAppBridgeRequestHandler
+└── homeserver_types/
+    └── __init__.py          — HomeserverHandlerRegistry
 ```
 
 #### `ProxyContext`
@@ -130,40 +135,64 @@ router = PathRouter()
 router.register(r"client/versions$", handler_fn)
 ```
 
-#### `RequestHandlerBase`
+#### `BridgeHandlerRegistry` / `HomeserverHandlerRegistry`
 
-Abstract base class.  Subclasses implement `_register_routes()` to associate regex patterns with handler methods.
+Each registry maps a `bridge_type` string to a handler class and caches one instance per type.  The appservice calls the registry with `bridge.bridge_type` so the correct handler is selected automatically.
 
 ```python
-class MyHandler(RequestHandlerBase):
-    def _register_routes(self) -> None:
-        self.router.register(r"some/path$", self._handle_some_path)
+# Bridge → Homeserver
+handler = BridgeHandlerRegistry.get_handler(bridge.bridge_type)
 
-    async def _handle_some_path(self, context: ProxyContext) -> ProxyContext:
-        # return a modified copy
-        return replace(context, query_params={...})
+# Homeserver → Bridge
+handler = HomeserverHandlerRegistry.get_handler(bridge.bridge_type)
 ```
 
-#### Adding a new path-specific transform
+If a bridge type has no registered handler, the registry falls back to the generic `BridgeRequestHandler` / `HomeserverRequestHandler`, preserving existing pass-through behaviour.
 
-1. Open the relevant handler (`homeserver_handler.py` for Homeserver → Bridge, `bridge_handler.py` for Bridge → Homeserver).
-2. Add an async handler method that accepts and returns a `ProxyContext`.
-3. Register it in `_register_routes()` with a regex pattern.
+#### Route priority — generic vs type-specific
 
-Example — stripping a query parameter:
+Both handler base classes use a two-level registration pattern:
+
+```
+_register_routes()
+  ├── _register_type_specific_routes()   ← runs first (bridge-type subclass overrides)
+  └── _register_generic_routes()         ← runs second (base class, fallback)
+```
+
+`PathRouter` uses first-match-wins, so type-specific routes registered first take priority.  Paths not claimed by the type-specific handler fall through to the generic routes.
+
+#### Adding a bridge-type-specific transform
+
+1. Create `handlers/bridge_types/<type>.py` with a subclass of `BridgeRequestHandler`.
+2. Override `_register_type_specific_routes()` and register any path handlers.
+3. Add the class to `BridgeHandlerRegistry._registry` in `bridge_types/__init__.py`.
 
 ```python
+# handlers/bridge_types/discord.py
 from dataclasses import replace
-from .base import ProxyContext, RequestHandlerBase
+from ..bridge_handler import BridgeRequestHandler
+from ..base import ProxyContext
 
-class BridgeRequestHandler(RequestHandlerBase):
-    def _register_routes(self) -> None:
-        self.router.register(r"client/versions$", self._handle_client_versions)
+class DiscordBridgeRequestHandler(BridgeRequestHandler):
+    def _register_type_specific_routes(self) -> None:
+        self.router.register(r"client/v3/account/whoami$", self._handle_whoami)
 
-    async def _handle_client_versions(self, context: ProxyContext) -> ProxyContext:
-        filtered = {k: v for k, v in context.query_params.items() if k != "user_id"}
-        return replace(context, query_params=filtered)
+    async def _handle_whoami(self, context: ProxyContext) -> ProxyContext:
+        # Discord-specific whoami transform
+        return replace(context, ...)
 ```
+
+```python
+# handlers/bridge_types/__init__.py  — add one line
+_registry = {
+    "whatsapp": WhatsAppBridgeRequestHandler,
+    "discord":  DiscordBridgeRequestHandler,   # ← new
+}
+```
+
+#### Adding a generic transform (applies to all bridges)
+
+Add a handler method to `BridgeRequestHandler._register_generic_routes()` or `HomeserverRequestHandler._register_generic_routes()`.
 
 ---
 
@@ -183,7 +212,7 @@ The homeserver sends Matrix appservice events to the bridge manager instead of d
    - Owner username fallback
 3. **Validates token** — confirms the token matches the identified bridge's `hs_token`.
 4. **Swaps token** — replaces `hs_token` with the bridge's `as_token` so the bridge accepts the request.
-5. **Transforms** — passes the request through `HomeserverRequestHandler`; any registered path handler may modify the method, headers, query params, body, or target URL.
+5. **Transforms** — `HomeserverHandlerRegistry.get_handler(bridge.bridge_type)` returns the handler for this bridge type (e.g. `HomeserverRequestHandler` for all types currently).  Any registered path handler may modify the method, headers, query params, body, or target URL.
 6. **Forwards** — sends the modified request to `http://localhost:{bridge.port}/_matrix/app/v1/{path}`.
 7. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
 
@@ -195,7 +224,7 @@ Bridges are configured to send their outbound Matrix API calls to the bridge man
 2. **Looks up bridge** — finds the bridge by `bridge_id` in the URL via `BridgeRegistry`. Falls back to token-based lookup if the ID isn't found.
 3. **Validates token** — confirms the token matches the bridge's registered `as_token`.
 4. **Swaps token** — replaces the bridge's `as_token` with the bridge manager's own `AS_TOKEN` so the homeserver recognises it as a legitimate registered appservice.
-5. **Transforms** — passes the request through `BridgeRequestHandler`; any registered path handler may modify the method, headers, query params, body, or target URL (e.g. stripping `user_id` from `/_matrix/client/versions`).
+5. **Transforms** — `BridgeHandlerRegistry.get_handler(bridge.bridge_type)` returns the handler for this bridge type (e.g. `WhatsAppBridgeRequestHandler` for `"whatsapp"`).  Any registered path handler may modify the method, headers, query params, body, or target URL (e.g. stripping `user_id` from `/_matrix/client/versions`).
 6. **Forwards** — sends the modified request to `{homeserver.url}/_matrix/{path}`.
 7. **Logs** — records the raw incoming and outgoing requests plus the response in `request_logs`.
 
