@@ -511,6 +511,31 @@ class RequestLogRepository:
             return False
 
     @staticmethod
+    def update_handler_name(request_id: str, handler_name: str) -> bool:
+        """
+        Update the request log with the handler that processed the request.
+
+        Called after the handler pipeline runs so the log records whether the
+        request was handled by a generic or bridge-type-specific route.
+
+        Args:
+            request_id: The unique request ID for this log entry.
+            handler_name: Handler class and method, e.g.
+                          "WhatsAppBridgeRequestHandler._handle_client_versions"
+                          or "BridgeRequestHandler.passthrough".
+
+        Returns:
+            True if the record was found and updated, False otherwise.
+        """
+        with DatabaseEngine.get_session() as session:
+            stmt = select(RequestLog).where(RequestLog.request_id == request_id)
+            log = session.execute(stmt).scalar_one_or_none()
+            if log:
+                log.handler_name = handler_name
+                return True
+            return False
+
+    @staticmethod
     def get_by_request_id(request_id: str) -> Optional[RequestLog]:
         """Get request log by request ID."""
         with DatabaseEngine.get_session() as session:

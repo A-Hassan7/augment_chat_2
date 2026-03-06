@@ -5,8 +5,10 @@ Three building blocks:
 
   ProxyContext       — immutable-friendly dataclass carrying all mutable
                        request data (method, path, headers, query params,
-                       body, target URL).  Use dataclasses.replace() to
-                       produce a modified copy without mutating in place.
+                       body, target URL) plus a ``handler_name`` field that
+                       records which handler method processed the request.
+                       Use dataclasses.replace() to produce a modified copy
+                       without mutating in place.
 
   PathRouter         — maps compiled regex patterns to handler callables.
                        Patterns are matched against the request path in
@@ -17,12 +19,14 @@ Three building blocks:
                        routes in _register_routes() and receive a
                        ProxyContext from handle(); they return a
                        (possibly modified) ProxyContext which appservice.py
-                       uses for the actual HTTP forward.
+                       uses for the actual HTTP forward.  handle() always
+                       sets handler_name on the returned context so callers
+                       can record which handler (or "passthrough") was used.
 """
 
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 
@@ -43,6 +47,10 @@ class ProxyContext:
         query_params: Query string parameters
         body:         Raw request body bytes
         target_url:   Full URL to forward the request to
+        handler_name: Set by RequestHandlerBase.handle() after dispatch.
+                      Format: "<ClassName>.<method_name>" for a matched route,
+                      or "<ClassName>.passthrough" when no route matched.
+                      None until handle() has been called.
     """
 
     method: str
@@ -51,6 +59,7 @@ class ProxyContext:
     query_params: Dict[str, str]
     body: bytes
     target_url: str
+    handler_name: Optional[str] = None
 
 
 class PathRouter:
@@ -122,14 +131,21 @@ class RequestHandlerBase(ABC):
         """
         Dispatch context to a path-specific handler, or pass it through.
 
+        Always sets ``handler_name`` on the returned context:
+        - ``"<ClassName>.<method_name>"`` when a registered route matched.
+        - ``"<ClassName>.passthrough"`` when no route matched and the context
+          is forwarded unchanged.
+
         Args:
             context: Populated ProxyContext from the appservice endpoint.
 
         Returns:
-            The original context, or a modified copy produced by the matched
-            handler.
+            The original context (or a modified copy), with ``handler_name``
+            set to reflect how the request was processed.
         """
         handler = self.router.match(context.path)
+        class_name = type(self).__name__
         if handler:
-            return await handler(context)
-        return context
+            result = await handler(context)
+            return replace(result, handler_name=f"{class_name}.{handler.__name__}")
+        return replace(context, handler_name=f"{class_name}.passthrough")

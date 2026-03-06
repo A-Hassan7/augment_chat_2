@@ -152,6 +152,31 @@ class RequestTracker:
         except Exception:
             pass
 
+    def log_handler_name(self, handler_name: Optional[str]) -> None:
+        """
+        Record which handler processed this request.
+
+        Call this immediately after the handler pipeline returns so the log
+        reflects whether the request was handled by a generic or bridge-type-
+        specific route.
+
+        Args:
+            handler_name: Value from ``ProxyContext.handler_name`` set by
+                          ``RequestHandlerBase.handle()``, e.g.
+                          ``"WhatsAppBridgeRequestHandler._handle_client_versions"``
+                          or ``"BridgeRequestHandler.passthrough"``.
+                          If None the log entry is left unchanged.
+        """
+        if not handler_name:
+            return
+        try:
+            self.repository.update_handler_name(
+                request_id=self.request_id,
+                handler_name=handler_name,
+            )
+        except Exception:
+            pass
+
     def set_bridge_context(
         self,
         bridge_id: int,
