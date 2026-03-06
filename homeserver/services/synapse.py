@@ -2,10 +2,20 @@
 Synapse homeserver service
 
 Handles Synapse deployment, configuration, and health checks.
+
+Config generation uses a two-file pattern:
+  homeserver.base.yaml  – clean config produced once by Synapse's own ``generate``
+                          command; never modified after creation.
+  homeserver.yaml       – rebuilt on every ``generate_config()`` call by copying the
+                          base file and overlaying only our required changes (database,
+                          appservices, workers).  This guarantees Synapse's defaults are
+                          always preserved and that repeated runs never accumulate
+                          duplicate configuration blocks.
 """
 
 from pathlib import Path
 from typing import Dict, Any, Optional
+import shutil
 import yaml
 import docker
 
@@ -62,6 +72,9 @@ class SynapseService(BaseService):
 
         # Paths
         self.data_dir = base_dir / "data"
+        # homeserver.base.yaml — untouched Synapse-generated config (created once)
+        self.base_config_path = self.data_dir / "homeserver.base.yaml"
+        # homeserver.yaml — runtime config rebuilt on every generate_config() call
         self.config_path = self.data_dir / "homeserver.yaml"
 
     def service_name(self) -> str:
@@ -87,33 +100,54 @@ class SynapseService(BaseService):
         return True
 
     def generate_config(self) -> None:
-        """Generate Synapse configuration files"""
+        """Generate the runtime Synapse configuration (homeserver.yaml).
+
+        Workflow
+        --------
+        1. Ensure ``homeserver.base.yaml`` exists.  If not, run Synapse's own
+           ``generate`` command (via Docker) to produce it.  This file is
+           **never modified** after creation so it always reflects Synapse's
+           pristine defaults.
+        2. Copy ``homeserver.base.yaml`` → ``homeserver.yaml`` on **every**
+           call.  This resets the runtime config to a known-clean baseline so
+           that repeated deployments never accumulate duplicate settings.
+        3. Apply our required overlays on top of the fresh copy:
+           - PostgreSQL connection
+           - Application-service registrations
+           - Worker / Redis configuration (when workers are enabled)
+        """
         print(f"Generating {self.service_name()} configuration...")
 
         # Create data directory
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate base config if it doesn't exist
-        if not self.config_path.exists():
+        # Step 1 – ensure the pristine base config exists
+        if not self.base_config_path.exists():
             self._generate_base_config()
         else:
-            print("  Config already exists, skipping generation")
+            print("  Base config already exists, reusing it")
 
-        # Configure postgres connection
+        # Step 2 – always start the runtime config from a clean copy of the base
+        shutil.copy2(self.base_config_path, self.config_path)
+        print("  Copied base config to homeserver.yaml")
+
+        # Step 3 – apply overlays
         self._configure_postgres()
-
-        # Configure appservice registrations
         self._configure_appservices()
-
-        # Configure workers if needed
         if self.num_workers > 0:
             self._configure_workers()
 
         print(f"  ✓ {self.service_name()} configuration complete")
 
     def _generate_base_config(self):
-        """Generate base Synapse config using Docker"""
-        print("  Generating base configuration...")
+        """Use Synapse's Docker image to generate the pristine base config.
+
+        The generated files are written to ``self.data_dir`` by Synapse itself.
+        After generation the canonical ``homeserver.yaml`` produced by Synapse
+        is renamed to ``homeserver.base.yaml`` so it can serve as an immutable
+        template for all future deployments.
+        """
+        print("  Generating base configuration via Synapse Docker image...")
 
         self.docker_client.containers.run(
             self.image_name(),
@@ -126,7 +160,20 @@ class SynapseService(BaseService):
             remove=True,
         )
 
-        print("  ✓ Base configuration generated")
+        # Synapse writes homeserver.yaml; rename it to homeserver.base.yaml so it
+        # is preserved as the immutable template and never directly modified.
+        generated = self.data_dir / "homeserver.yaml"
+        if generated.exists():
+            generated.rename(self.base_config_path)
+
+        print("  ✓ Base configuration generated and saved as homeserver.base.yaml")
+
+    def _has_listener(self, config: dict, port: int) -> bool:
+        """Return True if a listener on *port* already exists in *config*."""
+        return any(
+            listener.get("port") == port
+            for listener in config.get("listeners", [])
+        )
 
     def _configure_postgres(self):
         """Configure Synapse to use PostgreSQL"""
@@ -162,13 +209,7 @@ class SynapseService(BaseService):
             if "listeners" not in config:
                 config["listeners"] = []
 
-            # Check if metrics listener already exists
-            has_metrics = any(
-                listener.get("port") == HS_CONFIG.SYNAPSE_METRICS_PORT
-                for listener in config["listeners"]
-            )
-
-            if not has_metrics:
+            if not self._has_listener(config, HS_CONFIG.SYNAPSE_METRICS_PORT):
                 config["listeners"].append(
                     {
                         "port": HS_CONFIG.SYNAPSE_METRICS_PORT,
@@ -252,28 +293,30 @@ class SynapseService(BaseService):
             "port": HS_CONFIG.REDIS_PORT,
         }
 
-        # Add HTTP replication listener for main process
+        # Add HTTP replication listener for main process (guard against duplicates)
         if "listeners" not in config:
             config["listeners"] = []
 
-        config["listeners"].append(
-            {
-                "port": HS_CONFIG.SYNAPSE_REPLICATION_PORT,
-                "bind_addresses": ["0.0.0.0"],
-                "type": "http",
-                "resources": [{"names": ["replication"]}],
-            }
-        )
+        if not self._has_listener(config, HS_CONFIG.SYNAPSE_REPLICATION_PORT):
+            config["listeners"].append(
+                {
+                    "port": HS_CONFIG.SYNAPSE_REPLICATION_PORT,
+                    "bind_addresses": ["0.0.0.0"],
+                    "type": "http",
+                    "resources": [{"names": ["replication"]}],
+                }
+            )
 
-        # Add metrics listener for main process
-        config["listeners"].append(
-            {
-                "port": HS_CONFIG.SYNAPSE_METRICS_PORT,
-                "bind_addresses": ["0.0.0.0"],
-                "type": "http",
-                "resources": [{"names": ["metrics"]}],
-            }
-        )
+        # Add metrics listener for main process (guard against duplicates)
+        if not self._has_listener(config, HS_CONFIG.SYNAPSE_METRICS_PORT):
+            config["listeners"].append(
+                {
+                    "port": HS_CONFIG.SYNAPSE_METRICS_PORT,
+                    "bind_addresses": ["0.0.0.0"],
+                    "type": "http",
+                    "resources": [{"names": ["metrics"]}],
+                }
+            )
 
         # Build instance map
         instance_map = {
