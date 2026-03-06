@@ -248,16 +248,14 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
     )
     context = await HomeserverHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
 
-    # Record which handler processed this request
-    request_tracker.log_handler_name(context.handler_name)
-
-    # Log the outgoing (forwarded) request
+    # Log the outgoing (forwarded) request, including which handler processed it
     request_tracker.log_outgoing_request(
         method=context.method,
         url=context.target_url,
         headers=context.headers,
         body=context.body,
         query_params=context.query_params,
+        handler_name=context.handler_name,
     )
 
     # Step 5: Forward request to bridge
@@ -448,16 +446,14 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
     )
     context = await BridgeHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
 
-    # Record which handler processed this request
-    request_tracker.log_handler_name(context.handler_name)
-
-    # Log the outgoing (forwarded) request
+    # Log the outgoing (forwarded) request, including which handler processed it
     request_tracker.log_outgoing_request(
         method=context.method,
         url=context.target_url,
         headers=context.headers,
         body=context.body,
         query_params=context.query_params,
+        handler_name=context.handler_name,
     )
 
     # Step 5: Forward request to homeserver

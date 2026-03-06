@@ -476,6 +476,7 @@ class RequestLogRepository:
         error: Optional[str] = None,
         raw_outgoing_request: Optional[Dict[str, Any]] = None,
         response_source: Optional[str] = None,
+        handler_name: Optional[str] = None,
     ) -> bool:
         """Update request log with response details."""
         with DatabaseEngine.get_session() as session:
@@ -490,6 +491,8 @@ class RequestLogRepository:
                     log.raw_outgoing_request = raw_outgoing_request
                 if response_source is not None:
                     log.response_source = response_source
+                if handler_name is not None:
+                    log.handler_name = handler_name
                 return True
             return False
 
@@ -507,31 +510,6 @@ class RequestLogRepository:
                 log.bridge_id = bridge_id
                 if discovery_method is not None:
                     log.discovery_method = discovery_method
-                return True
-            return False
-
-    @staticmethod
-    def update_handler_name(request_id: str, handler_name: str) -> bool:
-        """
-        Update the request log with the handler that processed the request.
-
-        Called after the handler pipeline runs so the log records whether the
-        request was handled by a generic or bridge-type-specific route.
-
-        Args:
-            request_id: The unique request ID for this log entry.
-            handler_name: Handler class and method, e.g.
-                          "WhatsAppBridgeRequestHandler._handle_client_versions"
-                          or "BridgeRequestHandler.passthrough".
-
-        Returns:
-            True if the record was found and updated, False otherwise.
-        """
-        with DatabaseEngine.get_session() as session:
-            stmt = select(RequestLog).where(RequestLog.request_id == request_id)
-            log = session.execute(stmt).scalar_one_or_none()
-            if log:
-                log.handler_name = handler_name
                 return True
             return False
 

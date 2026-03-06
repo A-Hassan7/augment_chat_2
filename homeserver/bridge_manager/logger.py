@@ -115,6 +115,7 @@ class RequestTracker:
         headers: Optional[Dict[str, Any]] = None,
         body: Optional[bytes] = None,
         query_params: Optional[Dict[str, Any]] = None,
+        handler_name: Optional[str] = None,
     ) -> None:
         """
         Record the outgoing (forwarded) request for debugging.
@@ -126,6 +127,10 @@ class RequestTracker:
             headers: Outgoing headers
             body: Raw outgoing request body
             query_params: Query parameters
+            handler_name: Which handler class and method processed this request,
+                          e.g. "WhatsAppBridgeRequestHandler._handle_client_versions"
+                          or "BridgeRequestHandler.passthrough".  Set by
+                          RequestHandlerBase.handle() on ProxyContext.handler_name.
         """
 
         body_dict = None
@@ -148,30 +153,6 @@ class RequestTracker:
                 request_id=self.request_id,
                 status_code=0,  # placeholder until real response
                 raw_outgoing_request=raw_outgoing,
-            )
-        except Exception:
-            pass
-
-    def log_handler_name(self, handler_name: Optional[str]) -> None:
-        """
-        Record which handler processed this request.
-
-        Call this immediately after the handler pipeline returns so the log
-        reflects whether the request was handled by a generic or bridge-type-
-        specific route.
-
-        Args:
-            handler_name: Value from ``ProxyContext.handler_name`` set by
-                          ``RequestHandlerBase.handle()``, e.g.
-                          ``"WhatsAppBridgeRequestHandler._handle_client_versions"``
-                          or ``"BridgeRequestHandler.passthrough"``.
-                          If None the log entry is left unchanged.
-        """
-        if not handler_name:
-            return
-        try:
-            self.repository.update_handler_name(
-                request_id=self.request_id,
                 handler_name=handler_name,
             )
         except Exception:
