@@ -9,11 +9,11 @@ Two service classes follow the same pattern as WorkerService / NginxService:
 Architecture (N instances behind an nginx LB):
 
     Synapse / Bridges
-        → {hs_id}_nginx_bm:{BRIDGE_MANAGER_NGINX_PORT}
-            → {hs_id}_bridge_manager_1:{BRIDGE_MANAGER_INTERNAL_PORT}
-            → {hs_id}_bridge_manager_2:{BRIDGE_MANAGER_INTERNAL_PORT}
+        → {hs_id}_bridge_manager_nginx:{BRIDGE_MANAGER_NGINX_PORT}
+            → {hs_id}_bridge_manager_worker_1:{BRIDGE_MANAGER_INTERNAL_PORT}
+            → {hs_id}_bridge_manager_worker_2:{BRIDGE_MANAGER_INTERNAL_PORT}
             → …
-            → {hs_id}_bridge_manager_N:{BRIDGE_MANAGER_INTERNAL_PORT}
+            → {hs_id}_bridge_manager_worker_N:{BRIDGE_MANAGER_INTERNAL_PORT}
 
 The bridge-manager-registration.yaml URL must point at the nginx LB so that
 Synapse sees a single stable endpoint regardless of how many instances run.
@@ -58,9 +58,7 @@ class BridgeManagerService(BaseService):
         self.num_instances = num_instances
         super().__init__(homeserver_id, base_dir, network_name)
 
-        self.env_file = env_file or (
-            Path(__file__).parent.parent / ".env"
-        )
+        self.env_file = env_file or (Path(__file__).parent.parent / ".env")
 
         # Shared volume name for generated bridge configs
         self.configs_volume = f"{homeserver_id}_bridge_manager_configs"
@@ -86,9 +84,7 @@ class BridgeManagerService(BaseService):
 
     def generate_config(self) -> None:
         """No static config files — bridge manager reads all config from env/DB."""
-        print(
-            f"Preparing {self.num_instances} bridge manager instance(s)..."
-        )
+        print(f"Preparing {self.num_instances} bridge manager instance(s)...")
         self._ensure_configs_volume()
         print(f"  ✓ Bridge manager configs volume ready: {self.configs_volume}")
 
@@ -143,7 +139,7 @@ class BridgeManagerService(BaseService):
         Returns:
             The deployed container
         """
-        container_name = f"{self.homeserver_id}_bridge_manager_{instance_num}"
+        container_name = f"{self.homeserver_id}_bridge_manager_worker_{instance_num}"
 
         # Remove existing container if present
         try:
@@ -156,8 +152,30 @@ class BridgeManagerService(BaseService):
         # Override the instance ID so each container has a unique identity
         instance_env = dict(env_vars)
         instance_env["BRIDGE_MANAGER_INSTANCE_ID"] = (
-            f"{self.homeserver_id}_bm_{instance_num}"
+            f"{self.homeserver_id}_bridge_manager_{instance_num}"
         )
+
+        # Rewrite database URLs for in-container use: replace localhost /
+        # 127.0.0.1 with the postgres container name so the bridge manager
+        # can reach the database over the shared Docker network.
+        postgres_host = f"{self.homeserver_id}_postgres"
+        for key in ("BRIDGE_MANAGER_DATABASE_URL", "SYNAPSE_DATABASE_URL"):
+            if key in instance_env:
+                instance_env[key] = (
+                    instance_env[key]
+                    .replace("@localhost:", f"@{postgres_host}:")
+                    .replace("@127.0.0.1:", f"@{postgres_host}:")
+                )
+
+        # Rewrite HOMESERVER_URL so the bridge manager can reach Synapse
+        # over the shared Docker network rather than trying localhost.
+        synapse_host = f"{self.homeserver_id}_synapse"
+        if "HOMESERVER_URL" in instance_env:
+            instance_env["HOMESERVER_URL"] = (
+                instance_env["HOMESERVER_URL"]
+                .replace("://localhost:", f"://{synapse_host}:")
+                .replace("://127.0.0.1:", f"://{synapse_host}:")
+            )
 
         container = self.docker_client.containers.run(
             self.image_name(),
@@ -175,6 +193,20 @@ class BridgeManagerService(BaseService):
                     "mode": "rw",
                 },
             },
+            # Single instance: expose the nginx port on the host mapped to the internal
+            # worker port so bridges always reach the bridge manager on the same port
+            # regardless of whether a LB is in front.
+            # Multiple instances: the nginx LB handles host exposure — don't bind here
+            # (workers can't share a host port).
+            ports=(
+                {
+                    f"{HS_CONFIG.BRIDGE_MANAGER_NGINX_PORT}/tcp": (
+                        HS_CONFIG.BRIDGE_MANAGER_INTERNAL_PORT
+                    )
+                }
+                if self.num_instances == 1
+                else {}
+            ),
             # Allow reaching host services (bridges exposed on host ports)
             extra_hosts={"host.docker.internal": "host-gateway"},
             network=self.network_name,
@@ -195,7 +227,7 @@ class BridgeManagerService(BaseService):
     def is_healthy(self) -> bool:
         """Check if all bridge manager instances are running."""
         for i in range(1, self.num_instances + 1):
-            name = f"{self.homeserver_id}_bridge_manager_{i}"
+            name = f"{self.homeserver_id}_bridge_manager_worker_{i}"
             try:
                 container = self.docker_client.containers.get(name)
                 container.reload()
@@ -208,7 +240,7 @@ class BridgeManagerService(BaseService):
     def cleanup(self) -> None:
         """Stop and remove all bridge manager instance containers."""
         for i in range(1, self.num_instances + 1):
-            name = f"{self.homeserver_id}_bridge_manager_{i}"
+            name = f"{self.homeserver_id}_bridge_manager_worker_{i}"
             try:
                 container = self.docker_client.containers.get(name)
                 container.stop()
@@ -222,7 +254,7 @@ class BridgeManagerService(BaseService):
         """Return status of every bridge manager instance."""
         instances_status = []
         for i in range(1, self.num_instances + 1):
-            name = f"{self.homeserver_id}_bridge_manager_{i}"
+            name = f"{self.homeserver_id}_bridge_manager_worker_{i}"
             try:
                 container = self.docker_client.containers.get(name)
                 instances_status.append(
@@ -255,12 +287,12 @@ class BridgeManagerNginxService(BaseService):
     """
     Nginx load balancer that distributes requests across bridge manager instances.
 
-    Container name: {homeserver_id}_nginx_bm
+    Container name: {homeserver_id}_bridge_manager_nginx
     Listens on:     BRIDGE_MANAGER_NGINX_PORT (default 5000)
     Status port:    BRIDGE_MANAGER_NGINX_STATUS_PORT (default 5080)
 
     The bridge-manager-registration.yaml should point at this container:
-        url: "http://{homeserver_id}_nginx_bm:{BRIDGE_MANAGER_NGINX_PORT}/homeserver"
+        url: "http://{homeserver_id}_bridge_manager_nginx:{BRIDGE_MANAGER_NGINX_PORT}/homeserver"
     """
 
     def __init__(
@@ -280,7 +312,7 @@ class BridgeManagerNginxService(BaseService):
         self.num_instances = num_instances
         super().__init__(homeserver_id, base_dir, network_name)
 
-        self.container_name = f"{homeserver_id}_nginx_bm"
+        self.container_name = f"{homeserver_id}_bridge_manager_nginx"
 
         # Paths
         self.nginx_bm_dir = base_dir / "nginx_bm"
@@ -288,7 +320,7 @@ class BridgeManagerNginxService(BaseService):
         self.template_path = Path("templates") / "nginx_bm_template.conf"
 
     def service_name(self) -> str:
-        return "nginx_bm"
+        return "bridge_manager_nginx"
 
     def image_name(self) -> str:
         return HS_CONFIG.NGINX_IMAGE
@@ -316,7 +348,7 @@ class BridgeManagerNginxService(BaseService):
 
         # Build round-robin upstream block (stateless instances)
         upstream_servers = "\n".join(
-            f"    server {self.homeserver_id}_bridge_manager_{i}"
+            f"    server {self.homeserver_id}_bridge_manager_worker_{i}"
             f":{HS_CONFIG.BRIDGE_MANAGER_INTERNAL_PORT};"
             for i in range(1, self.num_instances + 1)
         )

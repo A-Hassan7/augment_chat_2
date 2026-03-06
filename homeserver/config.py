@@ -92,13 +92,13 @@ class BridgeManagerConfig:
     AS_TOKEN = _get_required_env("BRIDGE_MANAGER_AS_TOKEN")
 
     # Username patterns
-    NAMESPACE = "_bm_"  # Namespace for all bridge manager users
+    NAMESPACE = "_bridge_manager__"  # Namespace for all bridge manager users
 
     @property
     def username_pattern(self) -> str:
         """
         Regex pattern for bridge manager usernames.
-        Format: @_bm_<bridge_type>_<bridge_id>_<username>:<homeserver>
+        Format: @_bridge_manager__<bridge_type>_<bridge_id>_<username>:<homeserver>
         """
         return rf"@{self.NAMESPACE}(?P<bridge_type>[^_]+)_(?P<bridge_id>[^_]+)_(?P<username>[^:]+):(?P<homeserver>.+)"
 
@@ -198,7 +198,7 @@ NGINX_HTTP_PORT = 80  # Nginx load balancer
 NGINX_STATUS_PORT = 8080  # Nginx metrics endpoint
 
 # Bridge Manager Nginx (separate LB for bridge manager instances)
-BRIDGE_MANAGER_NGINX_PORT = 5000  # External port of the bridge manager LB
+BRIDGE_MANAGER_NGINX_PORT = 6000  # External port of the bridge manager LB
 BRIDGE_MANAGER_NGINX_STATUS_PORT = 5080  # Status/metrics port
 BRIDGE_MANAGER_INTERNAL_PORT = 5001  # Port each bridge manager instance listens on
 

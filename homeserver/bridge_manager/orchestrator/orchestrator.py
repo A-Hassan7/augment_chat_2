@@ -18,7 +18,7 @@ import docker
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from config import BRIDGE_MANAGER_CONFIG
+from config import BRIDGE_MANAGER_CONFIG, BRIDGE_MANAGER_NGINX_PORT
 from bridge_manager.database.models import Bridge, BridgeType, BridgeStatus
 from bridge_manager.database.repositories import (
     BridgeRepository,
@@ -123,7 +123,7 @@ class BridgeOrchestrator:
         bridge.appservice_port = port
         bridge.config_params["appservice_port"] = port
 
-        bridge.appservice_address = f"http://{BRIDGE_MANAGER_CONFIG.BRIDGE_MANAGER_HOSTNAME}:{BRIDGE_MANAGER_CONFIG.PORT}/bridge/{bridge_id}"
+        bridge.appservice_address = f"http://{BRIDGE_MANAGER_CONFIG.BRIDGE_MANAGER_HOSTNAME}:{BRIDGE_MANAGER_NGINX_PORT}/bridge/{bridge_id}"
         bridge.config_params["appservice_address"] = bridge.appservice_address
         bridge.config_params["homeserver_address"] = bridge.appservice_address
 

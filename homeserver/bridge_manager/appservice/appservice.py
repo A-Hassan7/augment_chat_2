@@ -78,9 +78,7 @@ async def startup_event():
             port=BRIDGE_MANAGER_CONFIG.PORT,
             homeserver_id=BRIDGE_MANAGER_CONFIG.HOMESERVER_ID,
         )
-        logger.log_info(
-            f"Worker registered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}"
-        )
+        logger.log_info(f"Worker registered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}")
     except Exception as e:
         logger.log_error(f"Failed to register worker in DB: {e}")
 
@@ -107,9 +105,7 @@ async def shutdown_event():
         BridgeManagerWorkerRepository.update_status(
             BRIDGE_MANAGER_CONFIG.INSTANCE_ID, "inactive"
         )
-        logger.log_info(
-            f"Worker deregistered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}"
-        )
+        logger.log_info(f"Worker deregistered: {BRIDGE_MANAGER_CONFIG.INSTANCE_ID}")
     except Exception as e:
         logger.log_error(f"Failed to deregister worker in DB: {e}")
 

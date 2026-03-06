@@ -6,6 +6,8 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
+from config import BRIDGE_MANAGER_CONFIG
+
 
 @dataclass
 class WhatsAppBridge:
@@ -69,7 +71,7 @@ class WhatsAppBridge:
 
         # Generate unique appservice ID and bot username
         self.appservice_id = f"whatsapp_{bridge_id}"
-        self.bot_username = f"whatsappbot_{bridge_id}"
+        self.bot_username = f"{BRIDGE_MANAGER_CONFIG.NAMESPACE}whatsappbot_{bridge_id}"
         self.matrix_bot_username = f"@{self.bot_username}:{homeserver_name}"
         # Owner is required at creation time
 
@@ -89,6 +91,7 @@ class WhatsAppBridge:
             "appservice_port": None,  # Will be set when port is allocated
             "appservice_id": self.appservice_id,
             "bot_username": self.bot_username,
+            "namespace": BRIDGE_MANAGER_CONFIG.NAMESPACE,
             "appservice_as_token": self.as_token,
             "appservice_hs_token": self.hs_token,
         }

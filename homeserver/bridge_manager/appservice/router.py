@@ -158,7 +158,7 @@ class BridgeRouter:
         """
         Extract username from request path.
 
-        Example: /_matrix/app/v1/users/@_bm_whatsapp_abc123_user:matrix.org
+        Example: /_matrix/app/v1/users/@_bridge_manager__whatsapp_abc123_user:matrix.org
         """
         match = self.username_pattern.search(path)
         if not match:
@@ -329,8 +329,8 @@ class BridgeRouter:
         """
         Parse username pattern to extract bridge ID and look up bridge.
 
-        Pattern: @_bm_<bridge_type>_<bridge_id>_<username>:<homeserver>
-        Example: @_bm_whatsapp_abc123_user:matrix.org
+        Pattern: @_bridge_manager__<bridge_type>_<bridge_id>_<username>:<homeserver>
+        Example: @_bridge_manager__whatsapp_abc123_user:matrix.org
 
         Args:
             username: Matrix username to parse

@@ -118,7 +118,7 @@ class Bridge(Base):
     # Matrix identifiers
     matrix_bot_username = Column(
         String(255), nullable=False, unique=True
-    )  # @_bm_wa_123__bot:hs.com
+    )  # @_bridge_manager__wa_123__bot:hs.com
     owner_matrix_username = Column(
         String(255), nullable=False
     )  # User who owns this bridge

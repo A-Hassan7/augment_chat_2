@@ -28,12 +28,12 @@ Automated deployment and management of a Matrix Synapse homeserver with optional
                  └─────────────────────────────────────────────────────┘
                                          │
                          ┌───────────────▼────────────────┐
-                         │   nginx_bm (optional LB) :5000 │
+                         │   bridge_manager_nginx (optional LB) :6000 │
                          └───┬───────────────────────┬────┘
                              ▼                       ▼
-                  ┌──────────────────┐  ┌──────────────────┐
-                  │  bridge_manager_1│  │  bridge_manager_N│
-                  │  :5001           │  │  :5001           │  ...
+                  ┌──────────────────────┐  ┌──────────────────────┐
+                  │  bridge_manager_     │  │  bridge_manager_     │
+                  │  worker_1  :5001     │  │  worker_N  :5001     │  ...
                   └────────┬─────────┘  └────────┬─────────┘
                            │  (shared DB + Docker socket)
                            ▼
@@ -103,8 +103,8 @@ This deploys the following Docker containers onto an isolated network:
 | `{id}_nginx` | 80 / 8080 | Load balancer / metrics |
 | `{id}_prometheus` | 9090 | Metrics collection |
 | `{id}_grafana` | 3000 | Monitoring dashboards |
-| `{id}_nginx_bm` | 5000 / 5080 | Bridge manager LB (optional, `--bridge-managers N`) |
-| `{id}_bridge_manager_N` | — | Bridge manager instance (optional) |
+| `{id}_bridge_manager_nginx` | 6000 / 5080 | Bridge manager LB (optional, `--bridge-managers N`) |
+| `{id}_bridge_manager_worker_N` | — | Bridge manager instance (optional) |
 
 All persistent data is written to `deployments/{homeserver-id}/`.
 
@@ -123,7 +123,7 @@ Workers use **consistent IP hashing** in Nginx for session affinity.
 ### Scaling Bridge Manager Instances
 
 When deployed with `--bridge-managers N`, multiple stateless bridge manager appservice
-proxy containers run behind a dedicated nginx load balancer (`{id}_nginx_bm`).
+proxy containers run behind a dedicated nginx load balancer (`{id}_bridge_manager_nginx`).
 All instances share the same PostgreSQL database so any instance can handle any request.
 
 ```bash
@@ -147,7 +147,7 @@ Update `bridge-manager-registration.yaml` to point at the nginx LB so Synapse se
 requests to all instances:
 
 ```yaml
-url: "http://{homeserver_id}_nginx_bm:5000/homeserver"
+url: "http://{homeserver_id}_bridge_manager_nginx:6000/homeserver"
 ```
 
 Set `BRIDGE_HOST=host.docker.internal` in `.env` (or the actual host IP on Linux) so

@@ -10,10 +10,10 @@ CLI Usage (from the homeserver directory):
 
 Architecture:
     Synapse / Bridges
-        → {hs_id}_nginx_bm:5000
-            → {hs_id}_bridge_manager_1:5001
-            → {hs_id}_bridge_manager_2:5001
-            → {hs_id}_bridge_manager_N:5001
+        → {hs_id}_bridge_manager_nginx:5000
+            → {hs_id}_bridge_manager_worker_1:5001
+            → {hs_id}_bridge_manager_worker_2:5001
+            → {hs_id}_bridge_manager_worker_N:5001
 
 All instances share the same PostgreSQL database and are therefore stateless —
 any instance can handle any inbound request.
@@ -57,7 +57,7 @@ def get_bridge_manager_count(homeserver_id: str) -> int:
     count = 0
     i = 1
     while True:
-        name = f"{homeserver_id}_bridge_manager_{i}"
+        name = f"{homeserver_id}_bridge_manager_worker_{i}"
         try:
             docker_client.containers.get(name)
             count += 1
@@ -105,7 +105,7 @@ def remove_bridge_manager_instance(homeserver_id: str, instance_num: int):
         homeserver_id: The homeserver ID
         instance_num: Instance number (1-indexed)
     """
-    name = f"{homeserver_id}_bridge_manager_{instance_num}"
+    name = f"{homeserver_id}_bridge_manager_worker_{instance_num}"
     try:
         container = docker_client.containers.get(name)
         container.stop()
@@ -115,7 +115,7 @@ def remove_bridge_manager_instance(homeserver_id: str, instance_num: int):
         pass
 
     # Mark the worker record inactive so the DB stays in sync
-    instance_id = f"{homeserver_id}_bm_{instance_num}"
+    instance_id = f"{homeserver_id}_bridge_manager_{instance_num}"
     try:
         from bridge_manager.database.repositories import BridgeManagerWorkerRepository
 
@@ -225,7 +225,7 @@ def get_bridge_manager_status(homeserver_id: str):
     i = 1
     found = False
     while True:
-        name = f"{homeserver_id}_bridge_manager_{i}"
+        name = f"{homeserver_id}_bridge_manager_worker_{i}"
         try:
             container = docker_client.containers.get(name)
             port_info = (
@@ -233,7 +233,7 @@ def get_bridge_manager_status(homeserver_id: str):
                 .get("Ports", {})
                 .get(f"{config.BRIDGE_MANAGER_INTERNAL_PORT}/tcp", [{}])
             )
-            host_port = (port_info[0].get("HostPort", "N/A") if port_info else "N/A")
+            host_port = port_info[0].get("HostPort", "N/A") if port_info else "N/A"
             print(f"  Instance {i}: {container.status} (host port {host_port})")
             found = True
             i += 1
@@ -241,15 +241,15 @@ def get_bridge_manager_status(homeserver_id: str):
             break
 
     # Check nginx LB
-    nginx_name = f"{homeserver_id}_nginx_bm"
+    nginx_name = f"{homeserver_id}_bridge_manager_nginx"
     try:
         nginx = docker_client.containers.get(nginx_name)
         print(
-            f"\n  nginx_bm ({nginx_name}): {nginx.status} "
+            f"\n  bridge_manager_nginx ({nginx_name}): {nginx.status} "
             f"(LB port {config.BRIDGE_MANAGER_NGINX_PORT})"
         )
     except docker.errors.NotFound:
-        print(f"\n  nginx_bm ({nginx_name}): not deployed")
+        print(f"\n  bridge_manager_nginx ({nginx_name}): not deployed")
 
     if not found:
         print("  No bridge manager instances deployed")

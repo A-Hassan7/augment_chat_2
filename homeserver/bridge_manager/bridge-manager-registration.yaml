@@ -1,9 +1,9 @@
 id: "bridge_manager"
-url: "http://bridge-manager:5000/homeserver"
+url: "http://bridge-manager:5000/homeserver" # THIS WILL BE CHANGED AT DEPLOYMENT BY THE BRIDGE MANAGER NGINX SERVERS URL
 as_token: "as_token"
 hs_token: "hs_token"
 rate_limited: false
-sender_localpart: "_bridge_manager__" # Will result in @_bridge_manager:example.org
+sender_localpart: "_bridge_manager__"
 namespaces:
   users:
     - exclusive: true

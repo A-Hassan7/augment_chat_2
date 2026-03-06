@@ -39,7 +39,10 @@ class DeploymentPlan:
     """
 
     def __init__(
-        self, homeserver_id: str, domain: str = "localhost", num_workers: int = 0,
+        self,
+        homeserver_id: str,
+        domain: str = "localhost",
+        num_workers: int = 0,
         num_bridge_managers: int = 0,
     ):
         self.homeserver_id = homeserver_id
@@ -78,6 +81,7 @@ class DeploymentPlan:
                 self.base_dir,
                 self.network_name,
                 num_workers=self.num_workers,
+                num_bridge_managers=self.num_bridge_managers,
                 postgres_container=f"{self.homeserver_id}_postgres",
                 redis_container=(
                     f"{self.homeserver_id}_redis" if self.num_workers > 0 else None
@@ -134,7 +138,7 @@ class DeploymentPlan:
         # Bridge Manager instances (optional — only when num_bridge_managers > 0)
         if self.num_bridge_managers > 0:
             self.services.append(
-                BridgeManagerNginxService(
+                BridgeManagerService(
                     self.homeserver_id,
                     self.base_dir,
                     self.network_name,
@@ -142,7 +146,7 @@ class DeploymentPlan:
                 )
             )
             self.services.append(
-                BridgeManagerService(
+                BridgeManagerNginxService(
                     self.homeserver_id,
                     self.base_dir,
                     self.network_name,

@@ -31,6 +31,7 @@ class SynapseService(BaseService):
         base_dir: Path,
         network_name: str,
         num_workers: int = 0,
+        num_bridge_managers: int = 0,
         postgres_container: Optional[str] = None,
         redis_container: Optional[str] = None,
     ):
@@ -40,12 +41,14 @@ class SynapseService(BaseService):
             base_dir: Base directory for configs and data
             network_name: Docker network name
             num_workers: Number of workers (0 for monolith mode)
+            num_bridge_managers: Number of bridge manager instances (0 = not deployed)
             postgres_container: Name of postgres container
             redis_container: Name of redis container (required if num_workers > 0)
         """
         super().__init__(homeserver_id, base_dir, network_name)
 
         self.num_workers = num_workers
+        self.num_bridge_managers = num_bridge_managers
         self.container_name = f"{homeserver_id}_synapse"
 
         # Database config
@@ -184,19 +187,38 @@ class SynapseService(BaseService):
         """Configure application service registrations"""
         print("  Configuring application services...")
 
+        if self.num_bridge_managers == 0:
+            print("  No bridge managers requested — skipping appservice registration")
+            return
+
         # Create appservices directory
         appservices_dir = self.data_dir / "appservices"
         appservices_dir.mkdir(exist_ok=True)
 
-        # Copy bridge_manager registration file from bridge_manager directory
-        import shutil
-
+        # Read the source registration template
         source_registration = (
             Path("bridge_manager") / "bridge-manager-registration.yaml"
         )
-        registration_path = appservices_dir / "bridge_manager.yaml"
+        with open(source_registration) as f:
+            registration = yaml.safe_load(f)
 
-        shutil.copy(source_registration, registration_path)
+        # Build the correct URL for this deployment:
+        #   > 1 instance  → nginx load balancer
+        #   = 1 instance  → single worker container (no LB needed)
+        if self.num_bridge_managers > 1:
+            bm_host = f"{self.homeserver_id}_bridge_manager_nginx"
+            bm_port = HS_CONFIG.BRIDGE_MANAGER_NGINX_PORT
+        else:
+            bm_host = f"{self.homeserver_id}_bridge_manager_worker_1"
+            bm_port = HS_CONFIG.BRIDGE_MANAGER_INTERNAL_PORT
+
+        registration["url"] = f"http://{bm_host}:{bm_port}/homeserver"
+
+        registration_path = appservices_dir / "bridge_manager.yaml"
+        with open(registration_path, "w") as f:
+            yaml.dump(registration, f, default_flow_style=False)
+
+        print(f"  ✓ Bridge manager appservice URL: {registration['url']}")
 
         # Update homeserver.yaml to reference the registration file
         with open(self.config_path, "r") as f:
