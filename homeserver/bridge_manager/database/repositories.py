@@ -476,6 +476,7 @@ class RequestLogRepository:
         error: Optional[str] = None,
         raw_outgoing_request: Optional[Dict[str, Any]] = None,
         response_source: Optional[str] = None,
+        handler_name: Optional[str] = None,
     ) -> bool:
         """Update request log with response details."""
         with DatabaseEngine.get_session() as session:
@@ -490,6 +491,8 @@ class RequestLogRepository:
                     log.raw_outgoing_request = raw_outgoing_request
                 if response_source is not None:
                     log.response_source = response_source
+                if handler_name is not None:
+                    log.handler_name = handler_name
                 return True
             return False
 

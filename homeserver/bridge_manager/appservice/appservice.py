@@ -15,7 +15,7 @@ Key responsibilities:
 import asyncio
 from typing import Optional
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from config import BRIDGE_MANAGER_CONFIG
@@ -24,6 +24,11 @@ from bridge_manager.appservice.models import RequestSource
 from bridge_manager.appservice.router import BridgeRouter
 from bridge_manager.appservice.registry import BridgeRegistry
 from bridge_manager.appservice.token_manager import TokenManager
+from bridge_manager.appservice.handlers import (
+    ProxyContext,
+    BridgeHandlerRegistry,
+    HomeserverHandlerRegistry,
+)
 from bridge_manager.database.repositories import BridgeManagerWorkerRepository
 from bridge_manager.errors import (
     BridgeNotFoundError,
@@ -232,27 +237,43 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
     bridge_url = f"http://{BRIDGE_MANAGER_CONFIG.BRIDGE_HOST}:{bridge.port}"
     target_url = f"{bridge_url}/_matrix/app/v1/{path}"
 
-    # Log the outgoing (forwarded) request
-    request_tracker.log_outgoing_request(
+    # Step 4: Apply path-specific transforms via the homeserver request handler
+    context = ProxyContext(
         method=method,
-        url=target_url,
+        path=path,
         headers=headers,
-        body=body,
         query_params=query_params,
+        body=body,
+        target_url=target_url,
+    )
+    context = await HomeserverHandlerRegistry.get_handler(bridge.bridge_type).handle(
+        context
     )
 
-    # Step 4: Forward request to bridge
-    logger.log_info(f"Proxying {method} request to bridge {bridge_id} at {target_url}")
+    # Log the outgoing (forwarded) request, including which handler processed it
+    request_tracker.log_outgoing_request(
+        method=context.method,
+        url=context.target_url,
+        headers=context.headers,
+        body=context.body,
+        query_params=context.query_params,
+        handler_name=context.handler_name,
+    )
+
+    # Step 5: Forward request to bridge
+    logger.log_info(
+        f"Proxying {context.method} request to bridge {bridge_id} at {context.target_url}"
+    )
 
     async with httpx.AsyncClient() as client:
         try:
             # Forward the request
             response = await client.request(
-                method=method,
-                url=target_url,
-                params=query_params,
-                headers=headers,
-                content=body,
+                method=context.method,
+                url=context.target_url,
+                params=context.query_params,
+                headers=context.headers,
+                content=context.body,
                 timeout=30.0,
             )
 
@@ -264,14 +285,13 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
             )
 
             logger.log_info(
-                f"Successfully proxied {method} request to bridge {bridge_id}, "
+                f"Successfully proxied {context.method} request to bridge {bridge_id}, "
                 f"status: {response.status_code}"
             )
 
-            return Response(
-                content=response.content,
+            return JSONResponse(
+                content=response.json(),
                 status_code=response.status_code,
-                headers=dict(response.headers),
             )
 
         except httpx.ConnectError as e:
@@ -416,29 +436,43 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
     # Build target URL to homeserver
     target_url = f"{homeserver.url}/_matrix/{path}"
 
-    # Log the outgoing (forwarded) request
-    request_tracker.log_outgoing_request(
+    # Step 4: Apply path-specific transforms via the bridge request handler
+    context = ProxyContext(
         method=method,
-        url=target_url,
+        path=path,
         headers=headers,
-        body=body,
         query_params=query_params,
+        body=body,
+        target_url=target_url,
+    )
+    context = await BridgeHandlerRegistry.get_handler(bridge.bridge_type).handle(
+        context
     )
 
-    # Step 4: Forward request to homeserver
+    # Log the outgoing (forwarded) request, including which handler processed it
+    request_tracker.log_outgoing_request(
+        method=context.method,
+        url=context.target_url,
+        headers=context.headers,
+        body=context.body,
+        query_params=context.query_params,
+        handler_name=context.handler_name,
+    )
+
+    # Step 5: Forward request to homeserver
     logger.log_info(
-        f"Proxying {method} request from bridge {bridge.id} to homeserver at {target_url}"
+        f"Proxying {context.method} request from bridge {bridge.id} to homeserver at {context.target_url}"
     )
 
     async with httpx.AsyncClient() as client:
         try:
             # Forward the request
             response = await client.request(
-                method=method,
-                url=target_url,
-                params=query_params,
-                headers=headers,
-                content=body,
+                method=context.method,
+                url=context.target_url,
+                params=context.query_params,
+                headers=context.headers,
+                content=context.body,
                 timeout=30.0,
             )
 
@@ -450,16 +484,15 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
             )
 
             logger.log_info(
-                f"Successfully proxied {method} request from bridge {bridge.id} to homeserver, "
+                f"Successfully proxied {context.method} request from bridge {bridge.id} to homeserver, "
                 f"status: {response.status_code}"
             )
 
             logger.log_info(response.content)
 
-            return Response(
-                content=response.content,
+            return JSONResponse(
+                content=response.json(),
                 status_code=response.status_code,
-                headers=dict(response.headers),
             )
 
         except httpx.ConnectError as e:

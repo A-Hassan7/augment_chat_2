@@ -115,6 +115,7 @@ class RequestTracker:
         headers: Optional[Dict[str, Any]] = None,
         body: Optional[bytes] = None,
         query_params: Optional[Dict[str, Any]] = None,
+        handler_name: Optional[str] = None,
     ) -> None:
         """
         Record the outgoing (forwarded) request for debugging.
@@ -126,6 +127,10 @@ class RequestTracker:
             headers: Outgoing headers
             body: Raw outgoing request body
             query_params: Query parameters
+            handler_name: Which handler class and method processed this request,
+                          e.g. "WhatsAppBridgeRequestHandler._handle_client_versions"
+                          or "BridgeRequestHandler.passthrough".  Set by
+                          RequestHandlerBase.handle() on ProxyContext.handler_name.
         """
 
         body_dict = None
@@ -148,6 +153,7 @@ class RequestTracker:
                 request_id=self.request_id,
                 status_code=0,  # placeholder until real response
                 raw_outgoing_request=raw_outgoing,
+                handler_name=handler_name,
             )
         except Exception:
             pass

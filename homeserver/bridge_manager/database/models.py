@@ -236,6 +236,10 @@ class RequestLog(Base):
     # Forwarding info
     forwarded_to = Column(String(255))  # "host:port" where request was forwarded
 
+    # Handler info — which handler class and method processed this request
+    handler_name = Column(String(255))  # e.g. "WhatsAppBridgeRequestHandler._handle_client_versions"
+                                        # or "BridgeRequestHandler.passthrough"
+
     # Timestamps
     timestamp = Column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
