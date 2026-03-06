@@ -15,7 +15,7 @@ Key responsibilities:
 import asyncio
 from typing import Optional
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from config import BRIDGE_MANAGER_CONFIG
@@ -246,7 +246,9 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
         body=body,
         target_url=target_url,
     )
-    context = await HomeserverHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
+    context = await HomeserverHandlerRegistry.get_handler(bridge.bridge_type).handle(
+        context
+    )
 
     # Log the outgoing (forwarded) request, including which handler processed it
     request_tracker.log_outgoing_request(
@@ -287,10 +289,9 @@ async def proxy_from_homeserver_to_bridge(path: str, request: Request):
                 f"status: {response.status_code}"
             )
 
-            return Response(
-                content=response.content,
+            return JSONResponse(
+                content=response.json(),
                 status_code=response.status_code,
-                headers=dict(response.headers),
             )
 
         except httpx.ConnectError as e:
@@ -444,7 +445,9 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
         body=body,
         target_url=target_url,
     )
-    context = await BridgeHandlerRegistry.get_handler(bridge.bridge_type).handle(context)
+    context = await BridgeHandlerRegistry.get_handler(bridge.bridge_type).handle(
+        context
+    )
 
     # Log the outgoing (forwarded) request, including which handler processed it
     request_tracker.log_outgoing_request(
@@ -487,10 +490,9 @@ async def proxy_from_bridge_to_homeserver(bridge_id: str, path: str, request: Re
 
             logger.log_info(response.content)
 
-            return Response(
-                content=response.content,
+            return JSONResponse(
+                content=response.json(),
                 status_code=response.status_code,
-                headers=dict(response.headers),
             )
 
         except httpx.ConnectError as e:
