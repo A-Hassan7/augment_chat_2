@@ -134,12 +134,16 @@
     <div class="pullover-resize-handle" id="pullover-resize"></div>
     <div class="pullover-topbar">
       <span>Request Detail</span>
-      <span style="color:var(--text-muted);font-size:.7rem;font-weight:400;">
-        Click any row to inspect · ESC to close
-      </span>
+      <div class="pullover-tabs">
+        <button class="pullover-tab active" id="tab-detail-btn">Detail</button>
+        <button class="pullover-tab" id="tab-replay-btn">⚡ Replay</button>
+      </div>
+      <span class="pullover-hint">Click any row · ESC to close</span>
       <button class="pullover-close" id="pullover-close" aria-label="Close">✕</button>
     </div>
-    <div class="pullover-panels" id="pullover-panels">
+
+    <!-- Detail tab -->
+    <div class="pullover-panels" id="tab-detail">
       <div class="pullover-panel" id="panel-raw-in">
         <h4>Raw Incoming Request</h4>
         <pre id="pre-raw-in">(select a row)</pre>
@@ -153,6 +157,31 @@
       <div class="pullover-panel" id="panel-response">
         <h4>Response Body</h4>
         <pre id="pre-response">(select a row)</pre>
+      </div>
+    </div>
+
+    <!-- Replay tab -->
+    <div class="pullover-replay" id="tab-replay">
+      <div class="replay-left">
+        <div class="replay-section-header">
+          <span>Edit Outgoing Request</span>
+          <span class="replay-note">Authorization is auto-injected from bridge config · Edit method, URL, headers, or body to test variants</span>
+        </div>
+        <textarea id="replay-editor" class="replay-textarea" spellcheck="false"></textarea>
+        <div class="replay-controls">
+          <label class="replay-auth-label" for="replay-auth">Override Auth Token</label>
+          <input type="text" id="replay-auth" class="replay-auth-input"
+                 placeholder="Leave blank — token is injected automatically">
+          <button class="btn btn-primary" id="replay-send-btn">▶ Send</button>
+        </div>
+      </div>
+      <div class="replay-divider"></div>
+      <div class="replay-right">
+        <div class="replay-section-header">
+          <span>Response</span>
+          <span class="replay-status" id="replay-status"></span>
+        </div>
+        <pre class="replay-response-pre" id="replay-response-pre">(send a request to see the response)</pre>
       </div>
     </div>
   </div>

@@ -92,6 +92,13 @@
       preRawOut.innerHTML   = syntaxHighlight(decodeAttr(tr, "data-raw-out"));
       preResponse.innerHTML = syntaxHighlight(decodeAttr(tr, "data-response"));
 
+      // Always reset to detail tab and clear previous replay state
+      switchTab("detail");
+      var _rs = document.getElementById("replay-status");
+      var _rp = document.getElementById("replay-response-pre");
+      if (_rs) { _rs.textContent = ""; _rs.className = "replay-status"; }
+      if (_rp) _rp.textContent = "(send a request to see the response)";
+
       pullover.classList.add("open");
     }
 
@@ -308,7 +315,108 @@
           });
       });
     }
+    // ── Tab switching & Replay panel ─────────────────────────────────
 
+    var tabDetailPanel = document.getElementById("tab-detail");
+    var tabReplayPanel = document.getElementById("tab-replay");
+    var tabDetailBtn   = document.getElementById("tab-detail-btn");
+    var tabReplayBtn   = document.getElementById("tab-replay-btn");
+
+    function switchTab(name) {
+      var isDetail = (name === "detail");
+      if (tabDetailPanel) tabDetailPanel.style.display = isDetail ? "" : "none";
+      if (tabReplayPanel) tabReplayPanel.classList.toggle("active", !isDetail);
+      if (tabDetailBtn)   tabDetailBtn.classList.toggle("active", isDetail);
+      if (tabReplayBtn)   tabReplayBtn.classList.toggle("active", !isDetail);
+    }
+
+    function populateReplayEditor(rawOutStr) {
+      var editor = document.getElementById("replay-editor");
+      if (!editor) return;
+      try {
+        var parsed = (typeof rawOutStr === "string" && rawOutStr)
+          ? JSON.parse(rawOutStr)
+          : (rawOutStr || {});
+        editor.value = JSON.stringify(parsed, null, 2);
+      } catch(e) {
+        editor.value = rawOutStr || "";
+      }
+    }
+
+    if (tabDetailBtn) {
+      tabDetailBtn.addEventListener("click", function() { switchTab("detail"); });
+    }
+    if (tabReplayBtn) {
+      tabReplayBtn.addEventListener("click", function() {
+        switchTab("replay");
+        if (activeRow) populateReplayEditor(decodeAttr(activeRow, "data-raw-out"));
+      });
+    }
+
+    var replaySendBtn = document.getElementById("replay-send-btn");
+    if (replaySendBtn) {
+      replaySendBtn.addEventListener("click", function() {
+        if (!activeRow) return;
+        var requestId   = activeRow.getAttribute("data-request-id") || "";
+        var editor      = document.getElementById("replay-editor");
+        var authInput   = document.getElementById("replay-auth");
+        var statusEl    = document.getElementById("replay-status");
+        var responsePre = document.getElementById("replay-response-pre");
+
+        var requestOverride;
+        try {
+          requestOverride = JSON.parse(editor.value);
+        } catch(e) {
+          alert("Invalid JSON in request editor: " + e.message);
+          return;
+        }
+
+        replaySendBtn.disabled = true;
+        replaySendBtn.textContent = "Sending…";
+        if (statusEl)    { statusEl.textContent = ""; statusEl.className = "replay-status"; }
+        if (responsePre) responsePre.textContent = "Waiting for response…";
+
+        fetch("/replay", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            request_id:       requestId,
+            request_override: requestOverride,
+            auth_override:    (authInput ? authInput.value.trim() : "") || null,
+          }),
+        })
+        .then(function(res) {
+          return res.text().then(function(text) {
+            try {
+              return JSON.parse(text);
+            } catch(e) {
+              throw new Error("Non-JSON response (" + res.status + "): " + text.substring(0, 300));
+            }
+          });
+        })
+        .then(function(data) {
+          replaySendBtn.disabled = false;
+          replaySendBtn.textContent = "▶ Send";
+          if (data.error && data.status_code === null) {
+            if (statusEl)    { statusEl.textContent = "Error"; statusEl.className = "replay-status replay-status-error"; }
+            if (responsePre) responsePre.textContent = data.error;
+          } else {
+            var sc  = data.status_code;
+            var cls = sc < 300 ? "status-2xx" : sc < 400 ? "status-3xx" : sc < 500 ? "status-4xx" : "status-5xx";
+            if (statusEl) { statusEl.textContent = sc; statusEl.className = "replay-status status-badge " + cls; }
+            var body    = data.response_body;
+            var bodyStr = (typeof body === "string") ? body : JSON.stringify(body);
+            if (responsePre) responsePre.innerHTML = syntaxHighlight(bodyStr);
+          }
+        })
+        .catch(function(err) {
+          replaySendBtn.disabled = false;
+          replaySendBtn.textContent = "▶ Send";
+          if (statusEl)    { statusEl.textContent = "Error"; statusEl.className = "replay-status replay-status-error"; }
+          if (responsePre) responsePre.textContent = "Request failed: " + err;
+        });
+      });
+    }
     // ── Filter reset ────────────────────────────────────────────
 
     const resetBtn = document.getElementById("filter-reset");

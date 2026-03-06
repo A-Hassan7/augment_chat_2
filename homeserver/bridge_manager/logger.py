@@ -23,7 +23,6 @@ class RequestTracker:
     - Unique request ID generation
     - Timing (duration_ms)
     - JSON parsing of request/response bodies
-    - Header sanitization (removes authorization)
     - Database persistence via RequestLogRepository
 
     Use this to track all incoming requests and their responses.
@@ -63,7 +62,7 @@ class RequestTracker:
             bridge_id: Associated bridge ID (optional)
             discovery_method: How the bridge was identified (optional)
             query_params: Query parameters (optional)
-            headers: Request headers (optional, authorization will be excluded)
+            headers: Request headers (optional)
             body: Raw request body (optional)
             forwarded_to: Where the request was proxied to (optional)
         """
@@ -71,13 +70,6 @@ class RequestTracker:
         self.source = source
         self.start_time = time.time()
         self.repository = RequestLogRepository()
-
-        # Parse and sanitize headers (remove auth)
-        safe_headers = {}
-        if headers:
-            safe_headers = {
-                k: v for k, v in headers.items() if k.lower() != "authorization"
-            }
 
         # Parse body if it's JSON
         body_dict = None
@@ -92,7 +84,7 @@ class RequestTracker:
             "method": method,
             "path": path,
             "query_params": query_params or {},
-            "headers": safe_headers,
+            "headers": headers,
             "body": body_dict,
         }
 
@@ -107,7 +99,7 @@ class RequestTracker:
                 method=method,
                 path=path,
                 query_params=query_params or {},
-                headers=safe_headers,
+                headers=headers,
                 body=body_dict,
                 forwarded_to=forwarded_to,
                 raw_incoming_request=raw_incoming,
@@ -131,15 +123,10 @@ class RequestTracker:
         Args:
             method: HTTP method used for the forwarded request
             url: Full target URL the request was forwarded to
-            headers: Outgoing headers (authorization will be excluded)
+            headers: Outgoing headers
             body: Raw outgoing request body
             query_params: Query parameters
         """
-        safe_headers = {}
-        if headers:
-            safe_headers = {
-                k: v for k, v in headers.items() if k.lower() != "authorization"
-            }
 
         body_dict = None
         if body:
@@ -152,7 +139,7 @@ class RequestTracker:
             "method": method,
             "url": url,
             "query_params": query_params or {},
-            "headers": safe_headers,
+            "headers": headers,
             "body": body_dict,
         }
 

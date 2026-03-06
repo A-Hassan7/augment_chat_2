@@ -88,10 +88,12 @@ def _build_rows(rows: list[dict], visible_cols: list[dict]) -> str:
         raw_in = _json_attr(row.get("raw_incoming_request"))
         raw_out = _json_attr(row.get("raw_outgoing_request"))
         resp = _json_attr(row.get("response_body"))
+        req_id = _esc(row.get("request_id", ""))
 
         cells = "".join(f"<td>{_esc(_cell_value(row, c['key']))}</td>" for c in cols)
         parts.append(
             f'<tr class="{css_class}" '
+            f'data-request-id="{req_id}" '
             f'data-raw-in="{raw_in}" '
             f'data-raw-out="{raw_out}" '
             f'data-response="{resp}">'

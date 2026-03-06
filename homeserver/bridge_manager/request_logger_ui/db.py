@@ -22,6 +22,7 @@ import psycopg2.extras  # RealDictCursor
 # Connection
 # ---------------------------------------------------------------------------
 
+
 def _parse_db_url(url: str) -> dict:
     """Convert a postgresql[+psycopg2]://user:pass@host:port/dbname URL to kwargs."""
     url = re.sub(r"^postgresql\+psycopg2://", "postgresql://", url)
@@ -53,6 +54,7 @@ def get_connection():
 # Filter options (populate dropdowns)
 # ---------------------------------------------------------------------------
 
+
 def fetch_filter_options() -> dict:
     """
     Returns:
@@ -83,6 +85,45 @@ def fetch_filter_options() -> dict:
             status_codes = [r["status_code"] for r in cur.fetchall()]
 
     return {"bridges": bridges, "status_codes": status_codes}
+
+
+# ---------------------------------------------------------------------------
+# Single-row lookup (used by replay handler)
+# ---------------------------------------------------------------------------
+
+
+def fetch_log_by_request_id(request_id: str) -> dict | None:
+    """
+    Return the full log row for a single request_id, plus the bridge's
+    as_token (joined in) for replay auth injection.  Returns None if not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT rl.*, b.as_token AS bridge_as_token
+                FROM   bridge_manager.request_logs rl
+                LEFT JOIN bridge_manager.bridges b ON b.id = rl.bridge_id
+                WHERE  rl.request_id = %s
+                """,
+                (request_id,),
+            )
+            row = cur.fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    for col in (
+        "raw_incoming_request",
+        "raw_outgoing_request",
+        "response_body",
+        "query_params",
+    ):
+        if isinstance(result.get(col), str):
+            try:
+                result[col] = json.loads(result[col])
+            except (ValueError, TypeError):
+                pass
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +236,12 @@ def fetch_logs(
             for r in cur.fetchall():
                 row = dict(r)
                 # JSON columns: ensure they are plain Python objects, not strings
-                for col in ("query_params", "raw_incoming_request", "raw_outgoing_request", "response_body"):
+                for col in (
+                    "query_params",
+                    "raw_incoming_request",
+                    "raw_outgoing_request",
+                    "response_body",
+                ):
                     if isinstance(row.get(col), str):
                         try:
                             row[col] = json.loads(row[col])
